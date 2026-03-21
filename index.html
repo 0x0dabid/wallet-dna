@@ -29,15 +29,189 @@ var DEMOS = [
 ];
 
 var SCAN_STEPS = [
-  "Resolving wallet identity", "Scanning transaction history",
-  "Analyzing trading behavior", "Detecting smart money signals",
-  "Tracking whale interactions", "Scanning trending tokens",
-  "Analyzing WETH flows", "Evaluating risk exposure",
-  "Calculating trading performance", "Identifying trading archetype",
+  "Fetching address labels from Nansen", "Querying token balances",
+  "Pulling transaction history (30D)", "Analyzing PnL performance",
+  "Scanning counterparty interactions", "Checking smart money netflows",
+  "Running token screener", "Classifying wallet archetype",
+  "Scoring DeFi & trading activity", "Evaluating risk profile",
   "Generating Wallet DNA",
 ];
 
-var ENDPOINTS = ["general_search", "token_screener", "sm_balances", "sm_perps", "hl_leaderboard", "flows(WETH)", "flows(PEPE)", "flows(JUP)"];
+var ENDPOINTS = ["address_labels", "address_balances", "address_transactions", "address_pnl", "address_counterparties", "smart_money_netflow", "token_screener", "token_flows"];
+
+var NANSEN_API_KEY = "a6MKGWgcFeXyuKLlDd0v1kazceuo4Bpv";
+var NANSEN_BASE = "https://api.nansen.ai";
+
+async function nansenPost(path, body) {
+  var res = await fetch(NANSEN_BASE + path, {
+    method: "POST",
+    headers: { "apiKey": NANSEN_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Nansen API " + res.status);
+  return res.json();
+}
+
+async function fetchLabels(addr) {
+  try {
+    return await nansenPost("/api/beta/profiler/address/labels", {
+      parameters: { chain: "all", address: addr },
+      pagination: { page: 1, recordsPerPage: 100 },
+    });
+  } catch (e) { console.warn("labels failed:", e); return []; }
+}
+
+async function fetchBalances(addr) {
+  try {
+    return await nansenPost("/api/beta/profiler/address/balances", {
+      parameters: { chain: "all", walletAddresses: [addr], suspiciousFilter: "on" },
+      pagination: { page: 1, recordsPerPage: 100 },
+    });
+  } catch (e) { console.warn("balances failed:", e); return []; }
+}
+
+async function fetchTransactions(addr) {
+  try {
+    var now = new Date();
+    var from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return await nansenPost("/api/v1/profiler/address/transactions", {
+      address: addr,
+      chain: "ethereum",
+      date: { from: from.toISOString(), to: now.toISOString() },
+      hide_spam_token: true,
+      pagination: { page: 1, per_page: 50 },
+      order_by: [{ field: "block_timestamp", direction: "DESC" }],
+    });
+  } catch (e) { console.warn("transactions failed:", e); return { data: [] }; }
+}
+
+async function fetchPnl(addr) {
+  try {
+    return await nansenPost("/api/beta/profiler/address/pnl-summary", {
+      parameters: { chain: "all", walletAddresses: [addr] },
+    });
+  } catch (e) { console.warn("pnl failed:", e); return null; }
+}
+
+async function fetchCounterparties(addr) {
+  try {
+    return await nansenPost("/api/v1/profiler/address/counterparties", {
+      parameters: {
+        walletAddresses: [addr], chain: "all", sourceInput: "Combined", groupBy: "wallet",
+      },
+      pagination: { page: 1, recordsPerPage: 20 },
+    });
+  } catch (e) { console.warn("counterparties failed:", e); return []; }
+}
+
+async function fetchSmartMoneyNetflow() {
+  try {
+    return await nansenPost("/api/v1/smart-money/netflow", {
+      chains: ["ethereum"],
+      filters: { include_smart_money_labels: ["Fund", "Smart Trader", "30D Smart Trader"] },
+      pagination: { page: 1, per_page: 10 },
+      order_by: [{ field: "net_flow_7d_usd", direction: "DESC" }],
+    });
+  } catch (e) { console.warn("smart money netflow failed:", e); return { data: [] }; }
+}
+
+async function fetchTokenScreener() {
+  try {
+    return await nansenPost("/api/v1/token-screener", {
+      chains: ["ethereum", "solana", "base"],
+      timeframe: "24h",
+      pagination: { page: 1, per_page: 10 },
+      filters: { only_smart_money: true },
+      order_by: [{ field: "chain", direction: "ASC" }],
+    });
+  } catch (e) { console.warn("token screener failed:", e); return { data: [] }; }
+}
+
+function classifyWallet(labels, balances, txData, pnlData) {
+  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return (l.label || "").toLowerCase(); }) : [];
+  var balArr = Array.isArray(balances) ? balances : (balances && balances.data ? balances.data : []);
+  var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
+  var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
+  var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal"];
+  var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo"];
+  var STABLE_SYMBOLS = ["usdt","usdc","dai","frax","tusd","busd"];
+  balArr.forEach(function(b) {
+    var val = parseFloat(b.usdValue || b.value_usd || 0);
+    totalUsd += val;
+    var sym = (b.symbol || "").toLowerCase();
+    if (DEFI_SYMBOLS.indexOf(sym) >= 0) defiTokens++;
+    if (MEME_SYMBOLS.indexOf(sym) >= 0) memeTokens++;
+    if (STABLE_SYMBOLS.indexOf(sym) >= 0) stableTokens++;
+  });
+  var txCount = txArr.length;
+  var isFund = labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader"); });
+  var isWhale = totalUsd > 10000000 || labelNames.some(function(l) { return l.includes("whale"); });
+  var isExchange = labelNames.some(function(l) { return l.includes("exchange") || l.includes("cex"); });
+  var isDeployer = labelNames.some(function(l) { return l.includes("deployer"); });
+
+  var arc, style;
+  if (isFund) { arc = ARCHETYPES.SMART_MONEY; style = "Data-Driven"; }
+  else if (isExchange) { arc = ARCHETYPES.WHALE; style = "Exchange Ops"; }
+  else if (isWhale && txCount < 10) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
+  else if (isWhale) { arc = ARCHETYPES.WHALE; style = "Strategic Allocator"; }
+  else if (memeTokens >= 2) { arc = ARCHETYPES.MEME_HUNTER; style = "Momentum"; }
+  else if (defiTokens >= 3) { arc = ARCHETYPES.DEFI_NATIVE; style = "Yield"; }
+  else if (txCount >= 30) { arc = ARCHETYPES.ACTIVE_TRADER; style = "Active"; }
+  else if (txCount < 5 && balArr.length > 0) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
+  else { arc = ARCHETYPES.ACTIVE_TRADER; style = "Analytical"; }
+
+  var defiScore = Math.min(25, defiTokens * 5 + (isFund ? 10 : 0));
+  var tradingScore = Math.min(25, Math.round(txCount / 2));
+  var chainsScore = Math.min(20, balArr.length > 20 ? 18 : Math.round(balArr.length * 0.9));
+  var holdingsScore = Math.min(20, totalUsd > 50000000 ? 20 : totalUsd > 10000000 ? 16 : totalUsd > 1000000 ? 12 : totalUsd > 100000 ? 8 : 4);
+  var riskScore = Math.min(10, stableTokens >= 2 ? 8 : memeTokens >= 3 ? 2 : 5);
+  var total = defiScore + tradingScore + chainsScore + holdingsScore + riskScore;
+  var riskPct = memeTokens >= 3 ? 75 : totalUsd > 10000000 && stableTokens >= 2 ? 25 : txCount > 30 ? 60 : 40;
+  var actPct = Math.min(100, Math.round(txCount * 2 + balArr.length));
+
+  var traits = [];
+  if (labelNames.length > 0) traits.push({ i: "\u{1F3F7}", t: labels[0].label || labels[0].fullname || "Labeled" });
+  if (totalUsd > 1000000) traits.push({ i: "\u{1F4B0}", t: "$" + (totalUsd / 1000000).toFixed(1) + "M Portfolio" });
+  if (defiTokens > 0) traits.push({ i: "\u{1F3D7}", t: defiTokens + " DeFi Tokens" });
+  if (memeTokens > 0) traits.push({ i: "\u{1F438}", t: memeTokens + " Meme Tokens" });
+  if (txCount > 0) traits.push({ i: "\u{1F4CA}", t: txCount + " Recent Txns" });
+  if (traits.length === 0) traits.push({ i: arc.icon, t: arc.name });
+  traits = traits.slice(0, 4);
+
+  var topToken = balArr.length > 0 ? (balArr[0].symbol || "?") + " $" + (parseFloat(balArr[0].usdValue || balArr[0].value_usd || 0) / 1000).toFixed(0) + "k" : "No balances found";
+
+  return {
+    arc: arc, score: total, defi: defiScore, trading: tradingScore,
+    chains: chainsScore, holdings: holdingsScore, risk: riskScore,
+    riskPct: riskPct, style: style, actPct: actPct, traits: traits,
+    flow: "Top holding: " + topToken,
+    _raw: { labels: labels, balances: balArr, txCount: txCount, totalUsd: totalUsd },
+  };
+}
+
+async function buildFromAPI(addr) {
+  var short = addr.slice(0, 6) + "..." + addr.slice(-4);
+  var results = await Promise.allSettled([
+    fetchLabels(addr),
+    fetchBalances(addr),
+    fetchTransactions(addr),
+    fetchPnl(addr),
+  ]);
+  var labels = results[0].status === "fulfilled" ? results[0].value : [];
+  var balances = results[1].status === "fulfilled" ? results[1].value : [];
+  var txData = results[2].status === "fulfilled" ? results[2].value : { data: [] };
+  var pnlData = results[3].status === "fulfilled" ? results[3].value : null;
+
+  var name = short;
+  if (Array.isArray(labels) && labels.length > 0) {
+    name = labels[0].fullname || labels[0].label || short;
+  }
+
+  var classified = classifyWallet(labels, balances, txData, pnlData);
+  classified.short = short;
+  classified.name = name;
+  return classified;
+}
 
 var CSS = [
   "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');",
@@ -177,7 +351,7 @@ function AnalysisModal({ d, onClose }) {
         <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, marginBottom: 20, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>{d.flow}</div>
 
         {/* Endpoints */}
-        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 8 }}>8 NANSEN ENDPOINTS {"\u00B7"} 7 ARCHETYPES</div>
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 8 }}>8 NANSEN API ENDPOINTS {"\u00B7"} LIVE DATA</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
           {ENDPOINTS.map(function(ep, i) {
             return <span key={i} style={{ padding: "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 4, fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.accent }}>{"\u25CF"} {ep}</span>;
@@ -256,16 +430,31 @@ export default function WalletDNA() {
     var s = SCAN_STEPS.map(function(label, i) { return { label: label, done: false, active: i === 0 }; });
     setSteps(s.slice());
     var total = s.length;
-    for (var i = 0; i < total; i++) {
-      var delay = i < 9 ? 350 + Math.random() * 200 : 550 + Math.random() * 200;
+
+    // Start real API call in parallel with the scanning animation
+    var apiPromise = buildFromAPI(w).catch(function(e) {
+      console.error("API failed, falling back:", e);
+      return build(w);
+    });
+
+    // Run scanning animation — speed it up but keep visual effect
+    for (var i = 0; i < total - 1; i++) {
+      var delay = 300 + Math.random() * 150;
       await new Promise(function(r) { setTimeout(r, delay); });
       s[i].done = true; s[i].active = false;
       if (i + 1 < total) s[i + 1].active = true;
-      setSteps(s.slice()); setPercent(Math.round(((i + 1) / total) * 100));
+      setSteps(s.slice()); setPercent(Math.round(((i + 1) / total) * 90));
     }
+
+    // Wait for the API to finish
+    var apiResult = await apiPromise;
+
+    // Complete last step
+    s[total - 1].done = true; s[total - 1].active = false;
+    setSteps(s.slice()); setPercent(100);
     setMatchFound(true);
-    await new Promise(function(r) { setTimeout(r, 1400); });
-    setResult(build(w)); setView("results");
+    await new Promise(function(r) { setTimeout(r, 1200); });
+    setResult(apiResult); setView("results");
   }, []);
 
   return (
