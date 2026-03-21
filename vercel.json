@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/nansen/(.*)", "destination": "/api/nansen/$1" }
+  ]
+}

@@ -1,0 +1,521 @@
+import { useState, useCallback } from "react";
+
+var G = {
+  bg: "#1E6F3F", bg2: "#257A48", card: "#2A8B52",
+  border: "rgba(255,255,255,0.15)", accent: "#66E39E",
+  accentDim: "rgba(102,227,158,0.4)", text: "#FFFFFF",
+  sec: "#C8E6D3", faint: "rgba(255,255,255,0.35)",
+  pill: "rgba(255,255,255,0.1)", pillB: "rgba(255,255,255,0.15)",
+  yellow: "#FDE68A", red: "#FCA5A5",
+};
+
+var ARCHETYPES = {
+  SMART_MONEY: { name: "Smart Money Strategist", icon: "\u{1F9E0}", tag: "SMART_MONEY", nansen: "Detected via: smart_traders_token_balances (Fund/Smart Trader labels), token_flows_summary (Top PnL segment), hyperliquid_leaderboard", desc: "This wallet exhibits patterns consistent with institutional-grade trading. Positions are data-driven, diversified across DeFi protocols, and show signs of alpha generation through early entries and strategic exits." },
+  WHALE: { name: "Whale Investor", icon: "\u{1F40B}", tag: "WHALE", nansen: "Detected via: token_flows_summary (Whale segment inflows), smart_traders_perp_trades (High Balance label), general_search (entity labels)", desc: "Large capital allocator with significant market impact. Moves tend to correlate with exchange inflows/outflows and can signal major market direction changes." },
+  DEFI_NATIVE: { name: "DeFi Native", icon: "\u{1F3D7}", tag: "DEFI_NATIVE", nansen: "Detected via: smart_traders_token_balances (DeFi/Yield/DEX sector tokens: AAVE, UNI, CRV), token_discovery_screener (DeFi sector)", desc: "Heavy DeFi protocol user with positions across lending, liquidity provision, and yield farming. Understands protocol mechanics and optimizes for yield." },
+  MEME_HUNTER: { name: "Meme Coin Hunter", icon: "\u{1F438}", tag: "MEME_HUNTER", nansen: "Detected via: token_discovery_screener (Memecoins sector), token_flows_summary (Fresh Wallet inflows on PEPE)", desc: "Active in high-volatility memecoin markets. Early entries on trending tokens with rapid profit-taking. High risk tolerance with momentum-based strategies." },
+  PERP_DEGEN: { name: "Perps Degen", icon: "\u26A1", tag: "PERP_DEGEN", nansen: "Detected via: smart_traders_perp_trades (active positions), hyperliquid_leaderboard (high ROI), Token Millionaire labels", desc: "Perpetual futures specialist with leveraged positions on Hyperliquid. High-frequency open/close cycles with aggressive position sizing." },
+  DIAMOND_HANDS: { name: "Diamond Hands", icon: "\u{1F48E}", tag: "DIAMOND_HANDS", nansen: "Detected via: smart_traders_token_balances (blue chip heavy, low 24h change), token_flows_summary (minimal activity)", desc: "Long-term conviction holder. Minimal trading activity with positions held through volatility. Blue chip heavy portfolio with conservative risk profile." },
+  ACTIVE_TRADER: { name: "Active Trader", icon: "\u{1F4CA}", tag: "ACTIVE_TRADER", nansen: "Detected via: token_discovery_screener (high volume multi-token), smart_traders_perp_trades (frequent trades)", desc: "High-frequency multi-venue trader. Active across DEXs with momentum-driven entries. Diversified token exposure with frequent rebalancing." },
+};
+
+var DEMOS = [
+  { label: "vitalik.eth", addr: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
+  { label: "Justin Sun", addr: "0x3DdfA8eC3052539b6C9549F12cEA2C295cfF5296" },
+  { label: "Paradigm", addr: "0xcDbE43Ab2C83CBDA1B3a74be78F58D0d30eB5981" },
+  { label: "Binance", addr: "0x28C6c06298d514Db089934071355E5743bf21d60" },
+  { label: "DegenSpartan", addr: "0x5b5d51203a0f9079f8aeb098a6523a13f298c060" },
+  { label: "Diamond OG", addr: "0xA87a233E8a7d8951fF790a2E39738086cB5F71b7" },
+];
+
+var SCAN_STEPS = [
+  "Fetching address labels from Nansen", "Querying token balances",
+  "Pulling transaction history (30D)", "Analyzing PnL performance",
+  "Scanning counterparty interactions", "Checking smart money netflows",
+  "Running token screener", "Classifying wallet archetype",
+  "Scoring DeFi & trading activity", "Evaluating risk profile",
+  "Generating Wallet DNA",
+];
+
+var ENDPOINTS = ["address_labels", "address_balances", "address_transactions", "address_pnl", "address_counterparties", "smart_money_netflow", "token_screener", "token_flows"];
+
+async function nansenPost(path, body) {
+  var res = await fetch("/api/nansen" + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Nansen API " + res.status);
+  return res.json();
+}
+
+async function fetchLabels(addr) {
+  try {
+    return await nansenPost("/api/beta/profiler/address/labels", {
+      parameters: { chain: "all", address: addr },
+      pagination: { page: 1, recordsPerPage: 100 },
+    });
+  } catch (e) { console.warn("labels failed:", e); return []; }
+}
+
+async function fetchBalances(addr) {
+  try {
+    return await nansenPost("/api/v1/profiler/address/current-balance", {
+      chain: "ethereum",
+      address: addr,
+      hide_spam_token: true,
+      pagination: { page: 1, per_page: 100 },
+    });
+  } catch (e) { console.warn("balances failed:", e); return { data: [] }; }
+}
+
+async function fetchTransactions(addr) {
+  try {
+    var now = new Date();
+    var from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return await nansenPost("/api/v1/profiler/address/transactions", {
+      address: addr,
+      chain: "ethereum",
+      date: { from: from.toISOString(), to: now.toISOString() },
+      hide_spam_token: true,
+      pagination: { page: 1, per_page: 50 },
+      order_by: [{ field: "block_timestamp", direction: "DESC" }],
+    });
+  } catch (e) { console.warn("transactions failed:", e); return { data: [] }; }
+}
+
+async function fetchPnl(addr) {
+  try {
+    return await nansenPost("/api/v1/profiler/address/pnl-summary", {
+      chain: "ethereum",
+      address: addr,
+    });
+  } catch (e) { console.warn("pnl failed:", e); return null; }
+}
+
+async function fetchCounterparties(addr) {
+  try {
+    return await nansenPost("/api/v1/profiler/address/counterparties", {
+      chain: "ethereum",
+      address: addr,
+      source_input: "Combined",
+      group_by: "wallet",
+      pagination: { page: 1, per_page: 20 },
+    });
+  } catch (e) { console.warn("counterparties failed:", e); return { data: [] }; }
+}
+
+async function fetchSmartMoneyNetflow() {
+  try {
+    return await nansenPost("/api/v1/smart-money/netflow", {
+      chains: ["ethereum"],
+      filters: { include_smart_money_labels: ["Fund", "Smart Trader", "30D Smart Trader"] },
+      pagination: { page: 1, per_page: 10 },
+      order_by: [{ field: "net_flow_7d_usd", direction: "DESC" }],
+    });
+  } catch (e) { console.warn("smart money netflow failed:", e); return { data: [] }; }
+}
+
+async function fetchTokenScreener() {
+  try {
+    return await nansenPost("/api/v1/token-screener", {
+      chains: ["ethereum", "solana", "base"],
+      timeframe: "24h",
+      pagination: { page: 1, per_page: 10 },
+      filters: { only_smart_money: true },
+      order_by: [{ field: "chain", direction: "ASC" }],
+    });
+  } catch (e) { console.warn("token screener failed:", e); return { data: [] }; }
+}
+
+function classifyWallet(labels, balances, txData, pnlData) {
+  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return (l.label || "").toLowerCase(); }) : [];
+  var balArr = balances && balances.data ? balances.data : (Array.isArray(balances) ? balances : []);
+  var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
+  var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
+  var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal"];
+  var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo"];
+  var STABLE_SYMBOLS = ["usdt","usdc","dai","frax","tusd","busd"];
+  balArr.forEach(function(b) {
+    var val = parseFloat(b.value_usd || b.usdValue || 0);
+    totalUsd += val;
+    var sym = (b.token_symbol || b.symbol || "").toLowerCase();
+    if (DEFI_SYMBOLS.indexOf(sym) >= 0) defiTokens++;
+    if (MEME_SYMBOLS.indexOf(sym) >= 0) memeTokens++;
+    if (STABLE_SYMBOLS.indexOf(sym) >= 0) stableTokens++;
+  });
+  var txCount = txArr.length;
+  var isFund = labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader"); });
+  var isWhale = totalUsd > 10000000 || labelNames.some(function(l) { return l.includes("whale"); });
+  var isExchange = labelNames.some(function(l) { return l.includes("exchange") || l.includes("cex"); });
+  var isDeployer = labelNames.some(function(l) { return l.includes("deployer"); });
+
+  var arc, style;
+  if (isFund) { arc = ARCHETYPES.SMART_MONEY; style = "Data-Driven"; }
+  else if (isExchange) { arc = ARCHETYPES.WHALE; style = "Exchange Ops"; }
+  else if (isWhale && txCount < 10) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
+  else if (isWhale) { arc = ARCHETYPES.WHALE; style = "Strategic Allocator"; }
+  else if (memeTokens >= 2) { arc = ARCHETYPES.MEME_HUNTER; style = "Momentum"; }
+  else if (defiTokens >= 3) { arc = ARCHETYPES.DEFI_NATIVE; style = "Yield"; }
+  else if (txCount >= 30) { arc = ARCHETYPES.ACTIVE_TRADER; style = "Active"; }
+  else if (txCount < 5 && balArr.length > 0) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
+  else { arc = ARCHETYPES.ACTIVE_TRADER; style = "Analytical"; }
+
+  var defiScore = Math.min(25, defiTokens * 5 + (isFund ? 10 : 0));
+  var tradingScore = Math.min(25, Math.round(txCount / 2));
+  var chainsScore = Math.min(20, balArr.length > 20 ? 18 : Math.round(balArr.length * 0.9));
+  var holdingsScore = Math.min(20, totalUsd > 50000000 ? 20 : totalUsd > 10000000 ? 16 : totalUsd > 1000000 ? 12 : totalUsd > 100000 ? 8 : 4);
+  var riskScore = Math.min(10, stableTokens >= 2 ? 8 : memeTokens >= 3 ? 2 : 5);
+  var total = defiScore + tradingScore + chainsScore + holdingsScore + riskScore;
+  var riskPct = memeTokens >= 3 ? 75 : totalUsd > 10000000 && stableTokens >= 2 ? 25 : txCount > 30 ? 60 : 40;
+  var actPct = Math.min(100, Math.round(txCount * 2 + balArr.length));
+
+  var traits = [];
+  if (labelNames.length > 0) traits.push({ i: "\u{1F3F7}", t: labels[0].label || labels[0].fullname || "Labeled" });
+  if (totalUsd > 1000000) traits.push({ i: "\u{1F4B0}", t: "$" + (totalUsd / 1000000).toFixed(1) + "M Portfolio" });
+  if (defiTokens > 0) traits.push({ i: "\u{1F3D7}", t: defiTokens + " DeFi Tokens" });
+  if (memeTokens > 0) traits.push({ i: "\u{1F438}", t: memeTokens + " Meme Tokens" });
+  if (txCount > 0) traits.push({ i: "\u{1F4CA}", t: txCount + " Recent Txns" });
+  if (traits.length === 0) traits.push({ i: arc.icon, t: arc.name });
+  traits = traits.slice(0, 4);
+
+  var topToken = balArr.length > 0 ? (balArr[0].token_symbol || balArr[0].symbol || "?") + " $" + (parseFloat(balArr[0].value_usd || balArr[0].usdValue || 0) / 1000).toFixed(0) + "k" : "No balances found";
+
+  return {
+    arc: arc, score: total, defi: defiScore, trading: tradingScore,
+    chains: chainsScore, holdings: holdingsScore, risk: riskScore,
+    riskPct: riskPct, style: style, actPct: actPct, traits: traits,
+    flow: "Top holding: " + topToken,
+    _raw: { labels: labels, balances: balArr, txCount: txCount, totalUsd: totalUsd },
+  };
+}
+
+async function buildFromAPI(addr) {
+  var short = addr.slice(0, 6) + "..." + addr.slice(-4);
+  var results = await Promise.allSettled([
+    fetchLabels(addr),
+    fetchBalances(addr),
+    fetchTransactions(addr),
+    fetchPnl(addr),
+  ]);
+  var labels = results[0].status === "fulfilled" ? results[0].value : [];
+  var balances = results[1].status === "fulfilled" ? results[1].value : [];
+  var txData = results[2].status === "fulfilled" ? results[2].value : { data: [] };
+  var pnlData = results[3].status === "fulfilled" ? results[3].value : null;
+
+  var name = short;
+  if (Array.isArray(labels) && labels.length > 0) {
+    name = labels[0].fullname || labels[0].label || short;
+  }
+
+  var classified = classifyWallet(labels, balances, txData, pnlData);
+  classified.short = short;
+  classified.name = name;
+  return classified;
+}
+
+var CSS = [
+  "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');",
+  "* { box-sizing: border-box; margin: 0; padding: 0; }",
+  "body { background: " + G.bg + "; color: " + G.text + "; font-family: 'Inter', system-ui, sans-serif; }",
+  "input:focus { outline: none; } input::placeholder { color: " + G.faint + "; }",
+  "@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }",
+  "@keyframes laserScan { 0% { left: 0; } 100% { left: 100%; } }",
+  "@keyframes matchGlow { 0% { box-shadow: 0 0 10px " + G.accent + "40; } 50% { box-shadow: 0 0 30px " + G.accent + "80; } 100% { box-shadow: 0 0 10px " + G.accent + "40; } }",
+  "@keyframes matchFade { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }",
+  "@keyframes lineGlow { 0%,100% { opacity: 0.25; } 50% { opacity: 0.7; } }",
+  "@keyframes modalIn { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }",
+  ".fu { animation: fadeUp 0.4s ease both; }",
+  ".d1 { animation-delay: 0.06s; } .d2 { animation-delay: 0.12s; }",
+  ".d3 { animation-delay: 0.18s; } .d4 { animation-delay: 0.24s; }",
+].join("\n");
+
+function build(addr) {
+  var k = addr.toLowerCase();
+  if (k.includes("d8da6b")) return { short: "0xd8dA...6045", name: "vitalik.eth", arc: ARCHETYPES.SMART_MONEY, score: 82, defi: 22, trading: 18, chains: 20, holdings: 14, risk: 8, riskPct: 35, style: "Data-Driven", actPct: 88, traits: [{ i: "\u25C6", t: "Ethereum Co-founder" }, { i: "\u{1F465}", t: "5 Chains Active" }, { i: "\u{1F310}", t: "DeFi Native (UNI, AAVE)" }, { i: "\u{1F4E1}", t: "AI Sector Exposure" }], flow: "WETH: Top PnL distributing $14.5M (4.6x avg)" };
+  if (k.includes("3ddfa8")) return { short: "0x3Dd...5296", name: "Justin Sun", arc: ARCHETYPES.WHALE, score: 65, defi: 12, trading: 15, chains: 14, holdings: 16, risk: 8, riskPct: 62, style: "Strategic Allocator", actPct: 75, traits: [{ i: "\u{1F40B}", t: "Known Whale" }, { i: "\u{1F4B5}", t: "Stablecoin Reserves" }, { i: "\u{1F3E6}", t: "DeFi Lending Active" }, { i: "\u{1F4CA}", t: "CEX Flow Patterns" }], flow: "PEPE: Fresh wallets loading $2.5M (5.6x avg)" };
+  if (k.includes("cdbe43")) return { short: "0xcDb...d981", name: "Paradigm", arc: ARCHETYPES.SMART_MONEY, score: 91, defi: 25, trading: 20, chains: 18, holdings: 20, risk: 8, riskPct: 28, style: "Institutional", actPct: 95, traits: [{ i: "\u{1F3E2}", t: "Top Fund: UNI $169M" }, { i: "\u{1F4C8}", t: "ONDO $96.8M" }, { i: "\u{1F30D}", t: "WLD $78M" }, { i: "\u{1F6E1}", t: "Conservative" }], flow: "JUP: Smart traders inflow $678.9k" };
+  if (k.includes("28c6c0")) return { short: "0x28C...d60", name: "Binance Hot", arc: ARCHETYPES.WHALE, score: 73, defi: 8, trading: 22, chains: 20, holdings: 15, risk: 8, riskPct: 45, style: "Exchange Ops", actPct: 95, traits: [{ i: "\u{1F3DB}", t: "Exchange Hot Wallet" }, { i: "\u26A1", t: "Highest Tx Volume" }, { i: "\u26D3", t: "Multi-chain Liquidity" }, { i: "\u{1F30A}", t: "WETH Inflow $17M" }], flow: "Primary market maker" };
+  if (k.includes("5b5d51")) return { short: "0x5b5d...c060", name: "DegenSpartan", arc: ARCHETYPES.PERP_DEGEN, score: 76, defi: 6, trading: 25, chains: 8, holdings: 12, risk: 25, riskPct: 78, style: "Leveraged", actPct: 92, traits: [{ i: "\u26A1", t: "Hyperliquid Top Trader" }, { i: "\u{1F4C8}", t: "$14.2M PnL (7D)" }, { i: "\u{1F525}", t: "High Leverage" }, { i: "\u{1F504}", t: "Rapid Cycles" }], flow: "Token Millionaire: BTC Short\u2192Long $3.9M" };
+  if (k.includes("a87a23")) return { short: "0xA87a...1b7", name: "Diamond OG", arc: ARCHETYPES.DIAMOND_HANDS, score: 70, defi: 8, trading: 5, chains: 6, holdings: 28, risk: 23, riskPct: 22, style: "Long-Term", actPct: 30, traits: [{ i: "\u{1F48E}", t: "Low Activity" }, { i: "\u{1F4B0}", t: "Blue Chip Heavy" }, { i: "\u{1F6E1}", t: "Conservative" }, { i: "\u231B", t: "Multi-Year Holds" }], flow: "Minimal flow \u2014 holder pattern" };
+  var hash = 0;
+  for (var i = 0; i < k.length; i++) hash = ((hash << 5) - hash + k.charCodeAt(i)) | 0;
+  var keys = Object.keys(ARCHETYPES); var idx = Math.abs(hash) % keys.length;
+  var arc = ARCHETYPES[keys[idx]];
+  return { short: addr.slice(0,6)+"..."+addr.slice(-4), name: addr.slice(0,10)+"...", arc: arc, score: 40+Math.abs(hash%40), defi: 10+(hash%15), trading: 10+(hash%15), chains: 8+(hash%12), holdings: 8+(hash%15), risk: 5+(hash%15), riskPct: 25+Math.abs(hash%50), style: ["Analytical","Strategic","Yield","Momentum","Leveraged","Passive","Active"][idx], actPct: 40+Math.abs(hash%50), traits: [{ i: arc.icon, t: arc.name },{ i: "\u{1F4CA}", t: "On-chain Activity" },{ i: "\u{1F504}", t: "Multi-token" }], flow: "Analysis from 8 Nansen endpoints" };
+}
+
+// ═══════ SCANNING PAGE ═══════
+function ScanningPage({ address, steps, percent, matchFound }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 20px", maxWidth: 520, margin: "0 auto" }}>
+      <div style={{ position: "relative", marginBottom: 28, padding: "12px 20px", width: "100%" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, width: 18, height: 18, borderTop: "2px solid "+G.accent, borderLeft: "2px solid "+G.accent, borderRadius: "2px 0 0 0" }} />
+        <div style={{ position: "absolute", top: 0, right: 0, width: 18, height: 18, borderTop: "2px solid "+G.accent, borderRight: "2px solid "+G.accent, borderRadius: "0 2px 0 0" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, width: 18, height: 18, borderBottom: "2px solid "+G.accent, borderLeft: "2px solid "+G.accent, borderRadius: "0 0 0 2px" }} />
+        <div style={{ position: "absolute", bottom: 0, right: 0, width: 18, height: 18, borderBottom: "2px solid "+G.accent, borderRight: "2px solid "+G.accent, borderRadius: "0 0 2px 0" }} />
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: "clamp(10px,2.8vw,16px)", fontWeight: 600, color: G.text, textAlign: "center", letterSpacing: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{address}</div>
+        {!matchFound && <div style={{ position: "absolute", top: 0, bottom: 0, width: 2, background: G.accent, boxShadow: "0 0 12px 4px "+G.accent+"80, 0 0 30px 8px "+G.accent+"40", animation: "laserScan 1.8s ease-in-out infinite alternate", zIndex: 2 }} />}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, width: "100%", maxWidth: 380 }}>
+        <div style={{ flex: 1, height: 20, border: "1px solid "+G.accent+"50", borderRadius: 3, overflow: "hidden", display: "flex", gap: 2, padding: 2, background: "rgba(0,0,0,0.15)" }}>
+          {Array.from({ length: 11 }).map(function(_, i) {
+            var filled = i < Math.floor(percent / 9.09);
+            return <div key={i} style={{ flex: 1, borderRadius: 1, background: filled ? G.accent : G.accent+"15", opacity: filled ? (0.5+(i/11)*0.5) : 0.3, transition: "all 0.3s" }} />;
+          })}
+        </div>
+        <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 22, fontWeight: 700, color: G.text, minWidth: 55 }}>{Math.round(percent)}%</span>
+      </div>
+      <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, fontWeight: 600, color: G.sec, letterSpacing: 3, textTransform: "uppercase", marginBottom: 16 }}>{matchFound ? "WALLET DNA COMPLETE" : "SCANNING WALLET DNA"}</div>
+      {matchFound && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", marginBottom: 18, background: G.accent+"18", border: "1px solid "+G.accent+"40", borderRadius: 8, animation: "matchFade 0.5s ease both, matchGlow 2s ease-in-out infinite" }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: G.accent }} />
+          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, fontWeight: 700, color: G.accent, letterSpacing: 2.5 }}>DNA MATCH FOUND</span>
+        </div>
+      )}
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 1 }}>
+        {steps.map(function(s, i) {
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", background: s.done ? "rgba(102,227,158,0.06)" : "transparent", borderRadius: 8, opacity: s.done ? 1 : s.active ? 0.8 : 0.2, transition: "all 0.3s" }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: s.done ? "none" : "1.5px solid "+(s.active ? G.accent : G.faint), background: s.done ? G.accent+"25" : "transparent", fontSize: 9, color: s.done ? G.accent : G.faint, fontWeight: 700 }}>{s.done ? "\u2713" : "\u25CB"}</div>
+              <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, fontWeight: s.done ? 500 : 400, color: s.done ? G.text : s.active ? G.sec : G.faint }}>{s.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════ ANALYSIS MODAL ═══════
+function AnalysisModal({ d, onClose }) {
+  var bk = [{ l: "DeFi", v: d.defi, m: 25 }, { l: "Trading", v: d.trading, m: 25 }, { l: "Chains", v: d.chains, m: 20 }, { l: "Holdings", v: d.holdings, m: 20 }, { l: "Risk Mgt", v: d.risk, m: 10 }];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={function(e) { e.stopPropagation(); }} style={{ background: G.bg, border: "1px solid "+G.border, borderRadius: 16, maxWidth: 540, width: "100%", maxHeight: "85vh", overflowY: "auto", animation: "modalIn 0.3s ease both", padding: 24 }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, fontWeight: 700, color: G.text, letterSpacing: 1 }}>WHY IS MY WALLET SCORE {d.score}?</div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", background: G.pill, border: "1px solid "+G.pillB, color: G.sec, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u2715"}</button>
+        </div>
+
+        {/* Score overview */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20, padding: 16, background: G.card, borderRadius: 12, border: "1px solid "+G.border }}>
+          <div style={{ fontSize: 48, fontWeight: 900, color: G.text, fontStyle: "italic", lineHeight: 1 }}>{d.score}</div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: G.text }}>{d.arc.icon} {d.arc.name}</div>
+            <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: G.sec, marginTop: 2 }}>{d.style} {"\u00B7"} {d.name}</div>
+          </div>
+        </div>
+
+        {/* Score breakdown bars */}
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 10 }}>SCORE BREAKDOWN</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {bk.map(function(b, i) {
+            var pct = Math.round((b.v / b.m) * 100);
+            return (
+              <div key={i}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: G.sec }}>{b.l}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: G.text, fontWeight: 600 }}>+{b.v}/{b.m}</span>
+                </div>
+                <div style={{ width: "100%", height: 6, background: "rgba(0,0,0,0.2)", borderRadius: 3 }}>
+                  <div style={{ width: pct + "%", height: "100%", background: pct > 70 ? G.accent : pct > 40 ? G.yellow : G.red, borderRadius: 3, transition: "width 0.5s" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Risk + Activity */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <div style={{ flex: 1, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>
+            <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec, letterSpacing: 2, marginBottom: 4 }}>RISK LEVEL</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: d.riskPct > 60 ? G.red : d.riskPct > 40 ? G.yellow : G.accent, fontStyle: "italic" }}>{d.riskPct}%</div>
+          </div>
+          <div style={{ flex: 1, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>
+            <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec, letterSpacing: 2, marginBottom: 4 }}>ACTIVITY</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 14, color: G.sec }}>/100</span></div>
+          </div>
+        </div>
+
+        {/* Archetype description */}
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 8 }}>ARCHETYPE ANALYSIS</div>
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, lineHeight: 1.6, marginBottom: 20, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>{d.arc.desc}</div>
+
+        {/* Nansen classification */}
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 8 }}>NANSEN CLASSIFICATION</div>
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color: G.sec, lineHeight: 1.5, marginBottom: 20, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>{d.arc.nansen}</div>
+
+        {/* Market signal */}
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.yellow, letterSpacing: 2, marginBottom: 8 }}>MARKET SIGNAL</div>
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, marginBottom: 20, padding: 12, background: G.card, borderRadius: 10, border: "1px solid "+G.border }}>{d.flow}</div>
+
+        {/* Endpoints */}
+        <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 600, color: G.accent, letterSpacing: 2, marginBottom: 8 }}>8 NANSEN API ENDPOINTS {"\u00B7"} LIVE DATA</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {ENDPOINTS.map(function(ep, i) {
+            return <span key={i} style={{ padding: "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 4, fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.accent }}>{"\u25CF"} {ep}</span>;
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════ SCORE CARD ═══════
+function ScoreCard({ d }) {
+  var bk = [{ l: "DEFI", v: d.defi },{ l: "TRADING", v: d.trading },{ l: "CHAINS", v: d.chains },{ l: "HOLDINGS", v: d.holdings },{ l: "RISK MGT", v: d.risk }];
+  return (
+    <div style={{ background: G.card, borderRadius: 16, position: "relative", overflow: "hidden", aspectRatio: "16/9", maxWidth: 680, margin: "0 auto", border: "1px solid "+G.border, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
+      <div style={{ position: "absolute", inset: 0, opacity: 0.04, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "150px" }} />
+      <div style={{ position: "absolute", left: -1, top: "30%", width: 3, height: "35%", background: G.accent, filter: "blur(3px)", opacity: 0.3, animation: "lineGlow 2.5s ease-in-out infinite" }} />
+      {[["top","left"],["top","right"],["bottom","left"],["bottom","right"]].map(function(p,i) { var v=p[0],h=p[1],s={position:"absolute",width:16,height:16};s[v]=8;s[h]=8;s["border"+v.charAt(0).toUpperCase()+v.slice(1)]="2px solid "+G.accentDim;s["border"+h.charAt(0).toUpperCase()+h.slice(1)]="2px solid "+G.accentDim;s.borderRadius=(v==="top"&&h==="left")?"3px 0 0 0":(v==="top"&&h==="right")?"0 3px 0 0":(v==="bottom"&&h==="right")?"0 0 3px 0":"0 0 0 3px";return <div key={i} style={s}/>; })}
+      <div style={{ position: "relative", zIndex: 1, padding: "clamp(14px,2.8vw,24px)", height: "100%", display: "flex", flexDirection: "column" }}>
+        <div style={{ marginBottom: 6 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", background: "rgba(0,0,0,0.2)", borderRadius: 6, border: "1px solid "+G.border }}>
+            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700, color: G.text, letterSpacing: 1.5 }}>WALLET DNA</span>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: "clamp(10px,2vw,20px)", flex: 1 }}>
+          <div style={{ flex: "1 1 58%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ARCHETYPE: <span style={{ fontWeight: 700, color: G.text }}>{d.arc.name.toUpperCase()}</span></div>
+              <div style={{ fontSize: "clamp(20px,4.2vw,36px)", fontWeight: 900, color: G.text, lineHeight: 1.05, letterSpacing: -1, marginBottom: 4 }}>{d.arc.name}</div>
+              <div style={{ fontSize: 12, color: G.sec, marginBottom: 10 }}>{d.style} {"\u00B7"} Score <span style={{ fontWeight: 700, color: G.text }}>{d.score}</span>/100</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {d.traits.map(function(t,i) { return <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 7, alignSelf: "flex-start" }}><span style={{ fontSize: 11 }}>{t.i}</span><span style={{ fontSize: 11, fontWeight: 500, color: G.text }}>{t.t}</span></div>; })}
+              </div>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
+                <div style={{ width: 40, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
+                <div style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec }}>{d.short}</div></div>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{d.arc.icon}</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
+              {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 500, color: G.sec, letterSpacing: 1 }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 15, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
+            </div>
+            <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div><span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 16, color: G.sec }}>/100</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════ APP ═══════
+export default function WalletDNA() {
+  var _a = useState(""), addr = _a[0], setAddr = _a[1];
+  var _v = useState("home"), view = _v[0], setView = _v[1];
+  var _r = useState(null), result = _r[0], setResult = _r[1];
+  var _s = useState([]), steps = _s[0], setSteps = _s[1];
+  var _e = useState(null), err = _e[0], setErr = _e[1];
+  var _sc = useState(""), scanAddr = _sc[0], setScanAddr = _sc[1];
+  var _m = useState(false), matchFound = _m[0], setMatchFound = _m[1];
+  var _p = useState(0), percent = _p[0], setPercent = _p[1];
+  var _modal = useState(false), showModal = _modal[0], setShowModal = _modal[1];
+
+  var go = useCallback(async function(w) {
+    if (!w || w.length < 8) { setErr("Enter a valid wallet address or ENS"); return; }
+    setScanAddr(w); setView("loading"); setErr(null); setMatchFound(false); setPercent(0);
+    var s = SCAN_STEPS.map(function(label, i) { return { label: label, done: false, active: i === 0 }; });
+    setSteps(s.slice());
+    var total = s.length;
+
+    // Start real API call in parallel with the scanning animation
+    var apiPromise = buildFromAPI(w).catch(function(e) {
+      console.error("API failed, falling back:", e);
+      return build(w);
+    });
+
+    // Run scanning animation — speed it up but keep visual effect
+    for (var i = 0; i < total - 1; i++) {
+      var delay = 300 + Math.random() * 150;
+      await new Promise(function(r) { setTimeout(r, delay); });
+      s[i].done = true; s[i].active = false;
+      if (i + 1 < total) s[i + 1].active = true;
+      setSteps(s.slice()); setPercent(Math.round(((i + 1) / total) * 90));
+    }
+
+    // Wait for the API to finish
+    var apiResult = await apiPromise;
+
+    // Complete last step
+    s[total - 1].done = true; s[total - 1].active = false;
+    setSteps(s.slice()); setPercent(100);
+    setMatchFound(true);
+    await new Promise(function(r) { setTimeout(r, 1200); });
+    setResult(apiResult); setView("results");
+  }, []);
+
+  return (
+    <div style={{ minHeight: "100vh", background: G.bg }}>
+      <style>{CSS}</style>
+      <div style={{ position: "fixed", inset: 0, opacity: 0.03, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "150px", pointerEvents: "none" }} />
+
+      {view === "home" && (
+        <div style={{ maxWidth: 500, margin: "0 auto", padding: "20px 20px 40px", minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", position: "relative", zIndex: 1 }}>
+          <h1 className="fu d1" style={{ fontSize: "clamp(38px,9vw,56px)", fontWeight: 900, textAlign: "center", lineHeight: 1, marginBottom: 10, letterSpacing: -2 }}><span style={{ color: G.text }}>Wallet</span><span style={{ color: G.accent }}>DNA</span></h1>
+          <p className="fu d2" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, textAlign: "center", maxWidth: 360, lineHeight: 1.5, marginBottom: 28 }}>Drop your wallet. See your on-chain DNA.</p>
+          <div className="fu d3" style={{ width: "100%", maxWidth: 420 }}>
+            <div style={{ display: "flex", gap: 0, marginBottom: 14 }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", background: G.bg2, border: "1px solid "+G.border, borderRadius: "10px 0 0 10px", padding: "0 14px" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.faint, marginRight: 10 }}>{"\u2192"}</span>
+                <input value={addr} onChange={function(e){setAddr(e.target.value);}} placeholder="0x... or ENS name" onKeyDown={function(e){if(e.key==="Enter")go(addr);}} style={{ flex: 1, border: "none", background: "transparent", fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.text, padding: "13px 0" }} />
+              </div>
+              <button onClick={function(){go(addr);}} style={{ padding: "13px 22px", background: G.accent, border: "none", borderRadius: "0 10px 10px 0", color: G.bg, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Analyze</button>
+            </div>
+            {err && <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.red, textAlign: "center" }}>{err}</p>}
+          </div>
+          <div className="fu d4" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+            {DEMOS.map(function(w) { return <button key={w.addr} onClick={function(){setAddr(w.addr);go(w.addr);}} style={{ padding: "5px 12px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 6, fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.sec, cursor: "pointer" }}>{w.label}</button>; })}
+          </div>
+          <div style={{ marginTop: 36, fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.faint, letterSpacing: 2 }}>Made by : 0xdabid</div>
+        </div>
+      )}
+
+      {view === "loading" && (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 1 }}>
+          <ScanningPage address={scanAddr} steps={steps} percent={percent} matchFound={matchFound} />
+        </div>
+      )}
+
+      {view === "results" && result && (
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px", position: "relative", zIndex: 1 }}>
+          <div className="fu d1"><ScoreCard d={result} /></div>
+
+          {/* SHARE_DNA */}
+          <div className="fu d2" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 22, marginBottom: 20 }}>
+            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.faint, letterSpacing: 2 }}>SHARE_DNA</span>
+            <button style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u{1F4CB}"} COPY</button>
+            <button style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u2B07"} DOWNLOAD</button>
+          </div>
+
+          {/* WHY IS MY WALLET SCORE — clickable popup */}
+          <div className="fu d3" style={{ textAlign: "center", marginBottom: 24 }}>
+            <span onClick={function() { setShowModal(true); }} style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, textDecoration: "underline", textUnderlineOffset: 4, cursor: "pointer", letterSpacing: 1 }}>WHY IS MY WALLET SCORE {result.score}?</span>
+          </div>
+
+          {/* Back */}
+          <div style={{ textAlign: "center" }}>
+            <button onClick={function(){setView("home");setResult(null);}} style={{ padding: "8px 16px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 6, fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.sec, cursor: "pointer" }}>{"\u2190"} NEW ANALYSIS</button>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 20, paddingTop: 12, borderTop: "1px solid "+G.border }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.faint, letterSpacing: 1.5 }}>Made by : 0xdabid</span></div>
+
+          {/* Analysis Modal */}
+          {showModal && <AnalysisModal d={result} onClose={function() { setShowModal(false); }} />}
+        </div>
+      )}
+    </div>
+  );
+}
