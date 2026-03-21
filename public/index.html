@@ -203,6 +203,8 @@ function classifyWallet(labels, balances, txData, pnlData) {
   var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal","jup","ray","mnde","orca","msol","drift","pyth","jto"];
   var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo","popcat","wen","myro","samo"];
   var STABLE_SYMBOLS = ["usdt","usdc","dai","frax","tusd","busd"];
+  var SOL_SMART_SYMBOLS = ["jup","ray","mnde","orca","msol","drift","pyth","jto","marinade","raydium"];
+  var solDefiCount = 0;
   balArr.forEach(function(b) {
     var val = parseFloat(b.value_usd || b.usdValue || 0);
     totalUsd += val;
@@ -210,16 +212,31 @@ function classifyWallet(labels, balances, txData, pnlData) {
     if (DEFI_SYMBOLS.indexOf(sym) >= 0) defiTokens++;
     if (MEME_SYMBOLS.indexOf(sym) >= 0) memeTokens++;
     if (STABLE_SYMBOLS.indexOf(sym) >= 0) stableTokens++;
+    if (SOL_SMART_SYMBOLS.indexOf(sym) >= 0) solDefiCount++;
   });
   var txCount = txArr.length;
-  var isFund = labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader"); });
+  var isFund = labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader") || l.includes("smart money"); });
   var isWhale = totalUsd > 10000000 || labelNames.some(function(l) { return l.includes("whale"); });
   var isExchange = labelNames.some(function(l) { return l.includes("exchange") || l.includes("cex"); });
   var isDeployer = labelNames.some(function(l) { return l.includes("deployer") || l.includes("contract creator"); });
   var isPerp = labelNames.some(function(l) { return l.includes("perp") || l.includes("leverag") || l.includes("hyperliquid") || l.includes("token millionaire"); });
 
+  // Detect smart money from PnL data
+  var hasStrongPnl = false;
+  if (pnlData) {
+    var realized = parseFloat(pnlData.realized_pnl || pnlData.realizedPnl || pnlData.total_realized_pnl || 0);
+    var winRate = parseFloat(pnlData.win_rate || pnlData.winRate || 0);
+    var totalPnl = parseFloat(pnlData.total_pnl || pnlData.pnl || 0);
+    if (realized > 100000 || winRate > 0.6 || totalPnl > 50000) hasStrongPnl = true;
+  }
+
+  // Detect Solana smart money: diversified SOL DeFi + good activity + decent portfolio
+  var isSolSmartMoney = solDefiCount >= 2 && txCount >= 10 && totalUsd > 50000;
+
   var arc, style;
   if (isFund) { arc = ARCHETYPES.SMART_MONEY; style = "Data-Driven"; }
+  else if (hasStrongPnl && txCount >= 10) { arc = ARCHETYPES.SMART_MONEY; style = "Alpha Hunter"; }
+  else if (isSolSmartMoney) { arc = ARCHETYPES.SMART_MONEY; style = "SOL Strategist"; }
   else if (isExchange) { arc = ARCHETYPES.WHALE; style = "Exchange Ops"; }
   else if (isPerp) { arc = ARCHETYPES.PERP_DEGEN; style = "Leveraged"; }
   else if (isWhale && txCount < 10) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
@@ -227,6 +244,7 @@ function classifyWallet(labels, balances, txData, pnlData) {
   else if (memeTokens >= 2) { arc = ARCHETYPES.MEME_HUNTER; style = "Momentum"; }
   else if (isDeployer) { arc = ARCHETYPES.DEFI_NATIVE; style = "Builder"; }
   else if (defiTokens >= 3) { arc = ARCHETYPES.DEFI_NATIVE; style = "Yield"; }
+  else if (hasStrongPnl) { arc = ARCHETYPES.SMART_MONEY; style = "Data-Driven"; }
   else if (txCount >= 30) { arc = ARCHETYPES.ACTIVE_TRADER; style = "Active"; }
   else if (txCount < 5 && balArr.length > 0) { arc = ARCHETYPES.DIAMOND_HANDS; style = "Long-Term"; }
   else { arc = ARCHETYPES.ACTIVE_TRADER; style = "Analytical"; }
