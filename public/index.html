@@ -68,6 +68,29 @@ var SCAN_STEPS = [
 
 var ENDPOINTS = ["address_labels", "address_balances", "address_transactions", "address_pnl", "address_counterparties", "smart_money_netflow", "token_screener", "token_flows"];
 
+// Recursively extract first array found in a nested API response
+function extractArray(obj) {
+  if (Array.isArray(obj)) return obj;
+  if (obj && typeof obj === "object") {
+    // Check common keys first
+    for (var k of ["data", "results", "items", "records", "labels"]) {
+      if (obj[k]) {
+        if (Array.isArray(obj[k])) return obj[k];
+        if (typeof obj[k] === "object") {
+          var nested = extractArray(obj[k]);
+          if (nested.length > 0) return nested;
+        }
+      }
+    }
+    // Check all other keys
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      if (Array.isArray(obj[keys[i]]) && obj[keys[i]].length > 0) return obj[keys[i]];
+    }
+  }
+  return [];
+}
+
 async function nansenPost(path, body) {
   var res = await fetch("/api/nansen", {
     method: "POST",
@@ -195,8 +218,8 @@ async function fetchTokenScreener() {
   } catch (e) { console.warn("token screener failed:", e); return { data: [] }; }
 }
 
-function classifyWallet(labels, balances, txData, pnlData) {
-  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return ((l.label || "") + " " + (l.fullname || "") + " " + (l.name || "") + " " + (l.type || "")).toLowerCase(); }) : [];
+function classifyWallet(labels, balances, txData, pnlData, hasSmartLabel) {
+  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return ((l.label || "") + " " + (l.fullname || "") + " " + (l.name || "") + " " + (l.type || "") + " " + (typeof l === "string" ? l : "")).toLowerCase(); }) : [];
   var balArr = balances && balances.data ? balances.data : (Array.isArray(balances) ? balances : []);
   var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
   var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
@@ -215,7 +238,7 @@ function classifyWallet(labels, balances, txData, pnlData) {
     if (SOL_SMART_SYMBOLS.indexOf(sym) >= 0) solDefiCount++;
   });
   var txCount = txArr.length;
-  var isFund = labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader") || l.includes("smart money"); });
+  var isFund = hasSmartLabel || labelNames.some(function(l) { return l.includes("fund") || l.includes("smart trader") || l.includes("smart money") || l.includes("smart"); });
   var isWhale = totalUsd > 10000000 || labelNames.some(function(l) { return l.includes("whale"); });
   var isExchange = labelNames.some(function(l) { return l.includes("exchange") || l.includes("cex"); });
   var isDeployer = labelNames.some(function(l) { return l.includes("deployer") || l.includes("contract creator"); });
@@ -237,8 +260,13 @@ function classifyWallet(labels, balances, txData, pnlData) {
     if (realized > 10000 || winRate > 0.4 || totalPnl > 10000 || roi > 1000) hasStrongPnl = true;
   }
 
-  // Detect Solana smart money: diversified SOL DeFi + good activity + decent portfolio
-  var isSolSmartMoney = solDefiCount >= 2 && txCount >= 10 && totalUsd > 50000;
+  // Detect Solana smart money: active Solana wallet with decent portfolio or DeFi activity
+  var isSolana = balArr.some(function(b) { return b._chain === "solana"; });
+  var isSolSmartMoney = isSolana && (
+    (solDefiCount >= 2 && txCount >= 10) ||
+    (txCount >= 20 && totalUsd > 10000) ||
+    (txCount >= 10 && totalUsd > 50000)
+  );
 
   console.log("Classification inputs:", {
     labelNames: labelNames, isFund: isFund, isWhale: isWhale, isPerp: isPerp,
@@ -305,25 +333,25 @@ async function buildFromAPI(addr) {
     fetchPnl(addr),
   ]);
   var rawLabels = results[0].status === "fulfilled" ? results[0].value : [];
-  // Nansen labels API may return { data: [...] }, { results: [...] }, or [...]
-  var labels = Array.isArray(rawLabels) ? rawLabels
-    : (rawLabels && rawLabels.data && Array.isArray(rawLabels.data)) ? rawLabels.data
-    : (rawLabels && rawLabels.results && Array.isArray(rawLabels.results)) ? rawLabels.results
-    : [];
-  console.log("Labels raw:", rawLabels, "→ extracted:", labels);
+  // Deep-extract labels array from any Nansen response shape
+  var labels = extractArray(rawLabels);
+  console.log("Labels raw:", JSON.stringify(rawLabels), "→ extracted:", labels);
+  // Also do a deep string scan for smart money indicators in raw response
+  var rawLabelStr = JSON.stringify(rawLabels || {}).toLowerCase();
+  var hasSmartLabel = rawLabelStr.includes("smart") || rawLabelStr.includes("fund") || rawLabelStr.includes("trader");
+  console.log("Smart label in raw response:", hasSmartLabel, "raw string sample:", rawLabelStr.slice(0, 500));
   var balances = results[1].status === "fulfilled" ? results[1].value : [];
   var txData = results[2].status === "fulfilled" ? results[2].value : { data: [] };
   var rawPnl = results[3].status === "fulfilled" ? results[3].value : null;
-  // Nansen PnL API may return { data: {...} }, { data: [{...}] }, or direct object
   var pnlData = rawPnl;
-  console.log("PnL raw:", rawPnl);
+  console.log("PnL raw:", JSON.stringify(rawPnl));
 
   var name = short;
   if (Array.isArray(labels) && labels.length > 0) {
     name = labels[0].fullname || labels[0].label || short;
   }
 
-  var classified = classifyWallet(labels, balances, txData, pnlData);
+  var classified = classifyWallet(labels, balances, txData, pnlData, hasSmartLabel);
   classified.short = short;
   classified.name = name;
   if (balances && balances._activeChains && balances._activeChains.length > 0) {
