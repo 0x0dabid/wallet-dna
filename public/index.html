@@ -39,13 +39,10 @@ var SCAN_STEPS = [
 
 var ENDPOINTS = ["address_labels", "address_balances", "address_transactions", "address_pnl", "address_counterparties", "smart_money_netflow", "token_screener", "token_flows"];
 
-var NANSEN_API_KEY = "a6MKGWgcFeXyuKLlDd0v1kazceuo4Bpv";
-var NANSEN_BASE = "https://api.nansen.ai";
-
 async function nansenPost(path, body) {
-  var res = await fetch(NANSEN_BASE + path, {
+  var res = await fetch("/api/nansen" + path, {
     method: "POST",
-    headers: { "apikey": NANSEN_API_KEY, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("Nansen API " + res.status);
