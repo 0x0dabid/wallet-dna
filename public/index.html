@@ -196,7 +196,7 @@ async function fetchTokenScreener() {
 }
 
 function classifyWallet(labels, balances, txData, pnlData) {
-  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return (l.label || "").toLowerCase(); }) : [];
+  var labelNames = Array.isArray(labels) ? labels.map(function(l) { return ((l.label || "") + " " + (l.fullname || "") + " " + (l.name || "") + " " + (l.type || "")).toLowerCase(); }) : [];
   var balArr = balances && balances.data ? balances.data : (Array.isArray(balances) ? balances : []);
   var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
   var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
@@ -224,14 +224,28 @@ function classifyWallet(labels, balances, txData, pnlData) {
   // Detect smart money from PnL data
   var hasStrongPnl = false;
   if (pnlData) {
-    var realized = parseFloat(pnlData.realized_pnl || pnlData.realizedPnl || pnlData.total_realized_pnl || 0);
-    var winRate = parseFloat(pnlData.win_rate || pnlData.winRate || 0);
-    var totalPnl = parseFloat(pnlData.total_pnl || pnlData.pnl || 0);
-    if (realized > 100000 || winRate > 0.6 || totalPnl > 50000) hasStrongPnl = true;
+    // Handle nested formats: pnlData could be { data: {...} }, { data: [{...}] }, or flat
+    var pnl = pnlData;
+    if (pnl.data && Array.isArray(pnl.data) && pnl.data.length > 0) pnl = pnl.data[0];
+    else if (pnl.data && typeof pnl.data === "object" && !Array.isArray(pnl.data)) pnl = pnl.data;
+    // Try all known Nansen PnL field names
+    var realized = parseFloat(pnl.realized_pnl || pnl.realizedPnl || pnl.total_realized_pnl || pnl.realized || 0);
+    var winRate = parseFloat(pnl.win_rate || pnl.winRate || pnl.win_ratio || 0);
+    var totalPnl = parseFloat(pnl.total_pnl || pnl.pnl || pnl.totalPnl || pnl.total || 0);
+    var roi = parseFloat(pnl.roi || pnl.ROI || 0);
+    console.log("PnL parsed:", { realized: realized, winRate: winRate, totalPnl: totalPnl, roi: roi, raw: pnl });
+    if (realized > 10000 || winRate > 0.4 || totalPnl > 10000 || roi > 1000) hasStrongPnl = true;
   }
 
   // Detect Solana smart money: diversified SOL DeFi + good activity + decent portfolio
   var isSolSmartMoney = solDefiCount >= 2 && txCount >= 10 && totalUsd > 50000;
+
+  console.log("Classification inputs:", {
+    labelNames: labelNames, isFund: isFund, isWhale: isWhale, isPerp: isPerp,
+    hasStrongPnl: hasStrongPnl, isSolSmartMoney: isSolSmartMoney,
+    solDefiCount: solDefiCount, txCount: txCount, totalUsd: totalUsd,
+    defiTokens: defiTokens, memeTokens: memeTokens, balCount: balArr.length,
+  });
 
   var arc, style;
   if (isFund) { arc = ARCHETYPES.SMART_MONEY; style = "Data-Driven"; }
@@ -290,10 +304,19 @@ async function buildFromAPI(addr) {
     fetchTransactions(addr),
     fetchPnl(addr),
   ]);
-  var labels = results[0].status === "fulfilled" ? results[0].value : [];
+  var rawLabels = results[0].status === "fulfilled" ? results[0].value : [];
+  // Nansen labels API may return { data: [...] }, { results: [...] }, or [...]
+  var labels = Array.isArray(rawLabels) ? rawLabels
+    : (rawLabels && rawLabels.data && Array.isArray(rawLabels.data)) ? rawLabels.data
+    : (rawLabels && rawLabels.results && Array.isArray(rawLabels.results)) ? rawLabels.results
+    : [];
+  console.log("Labels raw:", rawLabels, "→ extracted:", labels);
   var balances = results[1].status === "fulfilled" ? results[1].value : [];
   var txData = results[2].status === "fulfilled" ? results[2].value : { data: [] };
-  var pnlData = results[3].status === "fulfilled" ? results[3].value : null;
+  var rawPnl = results[3].status === "fulfilled" ? results[3].value : null;
+  // Nansen PnL API may return { data: {...} }, { data: [{...}] }, or direct object
+  var pnlData = rawPnl;
+  console.log("PnL raw:", rawPnl);
 
   var name = short;
   if (Array.isArray(labels) && labels.length > 0) {
