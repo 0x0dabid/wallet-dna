@@ -454,7 +454,7 @@ function AnalysisModal({ d, onClose }) {
 function ScoreCard({ d }) {
   var bk = [{ l: "DEFI", v: d.defi },{ l: "TRADING", v: d.trading },{ l: "CHAINS", v: d.chains },{ l: "HOLDINGS", v: d.holdings },{ l: "RISK MGT", v: d.risk }];
   return (
-    <div style={{ background: G.card, borderRadius: 16, position: "relative", overflow: "hidden", aspectRatio: "16/9", maxWidth: 680, margin: "0 auto", border: "1px solid "+G.border, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
+    <div data-scorecard="true" style={{ background: G.card, borderRadius: 16, position: "relative", overflow: "hidden", aspectRatio: "16/9", maxWidth: 680, margin: "0 auto", border: "1px solid "+G.border, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
       <div style={{ position: "absolute", inset: 0, opacity: 0.04, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "150px" }} />
       <div style={{ position: "absolute", left: -1, top: "30%", width: 3, height: "35%", background: G.accent, filter: "blur(3px)", opacity: 0.3, animation: "lineGlow 2.5s ease-in-out infinite" }} />
       {[["top","left"],["top","right"],["bottom","left"],["bottom","right"]].map(function(p,i) { var v=p[0],h=p[1],s={position:"absolute",width:16,height:16};s[v]=8;s[h]=8;s["border"+v.charAt(0).toUpperCase()+v.slice(1)]="2px solid "+G.accentDim;s["border"+h.charAt(0).toUpperCase()+h.slice(1)]="2px solid "+G.accentDim;s.borderRadius=(v==="top"&&h==="left")?"3px 0 0 0":(v==="top"&&h==="right")?"0 3px 0 0":(v==="bottom"&&h==="right")?"0 0 3px 0":"0 0 0 3px";return <div key={i} style={s}/>; })}
@@ -507,11 +507,22 @@ function ScoreCard({ d }) {
 
 // ═══════ IMAGE CAPTURE HELPERS ═══════
 async function captureCardAsCanvas(el) {
-  return html2canvas(el, {
+  // Find the actual ScoreCard root element inside the ref
+  var target = el.querySelector("[data-scorecard]") || el;
+  return html2canvas(target, {
     backgroundColor: G.card,
     scale: 2,
     useCORS: true,
     logging: false,
+    onclone: function(clonedDoc, clonedEl) {
+      // Ensure no animation hides the content
+      clonedEl.style.opacity = "1";
+      clonedEl.style.transform = "none";
+      clonedEl.style.animation = "none";
+      // Also fix any parent opacity
+      var p = clonedEl.parentElement;
+      while (p) { p.style.opacity = "1"; p.style.animation = "none"; p = p.parentElement; }
+    },
   });
 }
 
@@ -636,7 +647,7 @@ function WalletDNA() {
 
       {view === "results" && result && (
         <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px", position: "relative", zIndex: 1 }}>
-          <div className="fu d1" ref={cardRef}><ScoreCard d={result} /></div>
+          <div className="fu d1"><div ref={cardRef}><ScoreCard d={result} /></div></div>
 
           {/* SHARE_DNA */}
           <div className="fu d2" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 22, marginBottom: 20 }}>
