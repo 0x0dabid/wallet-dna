@@ -36,13 +36,13 @@ var ARCHETYPES = {
 };
 
 var DEMOS = [
-  { label: "vitalik.eth", addr: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
-  { label: "Justin Sun", addr: "0x3DdfA8eC3052539b6C9549F12cEA2C295cfF5296" },
   { label: "Paradigm", addr: "0xcDbE43Ab2C83CBDA1B3a74be78F58D0d30eB5981" },
-  { label: "Binance", addr: "0x28C6c06298d514Db089934071355E5743bf21d60" },
+  { label: "Justin Sun", addr: "0x3DdfA8eC3052539b6C9549F12cEA2C295cfF5296" },
+  { label: "vitalik.eth", addr: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
+  { label: "Meme Whale", addr: "0x7431931094e8BAe1ECAA7d0b3F3A60a39351C50E" },
   { label: "DegenSpartan", addr: "0x5b5d51203a0f9079f8aeb098a6523a13f298c060" },
   { label: "Diamond OG", addr: "0xA87a233E8a7d8951fF790a2E39738086cB5F71b7" },
-  { label: "Solana Whale", addr: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
+  { label: "SOL Trader", addr: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
 ];
 
 var EVM_CHAINS = ["ethereum", "base", "arbitrum", "polygon", "optimism", "bsc", "avalanche"];
@@ -381,13 +381,20 @@ var CSS = [
 function build(addr) {
   var k = addr.toLowerCase();
   // Score categories: DeFi(max 25), Trading(max 25), Chains(max 20), Holdings(max 20), Risk Mgt(max 10) = 100
-  if (k.includes("d8da6b")) return { short: "0xd8dA...6045", name: "vitalik.eth", arc: ARCHETYPES.SMART_MONEY, score: 82, defi: 22, trading: 18, chains: 20, holdings: 14, risk: 8, riskPct: 35, style: "Data-Driven", actPct: 88, activeChains: ["ethereum", "base", "optimism", "arbitrum", "polygon"], traits: [{ i: "\u25C6", t: "Ethereum Co-founder" }, { i: "\u26D3", t: "5 Chains Active" }, { i: "\u{1F3D7}", t: "DeFi Native (UNI, AAVE)" }, { i: "\u{1F4CA}", t: "High On-chain Activity" }], flow: "Multi-chain DeFi positions across major L2s" };
+  // 1. SMART_MONEY — Paradigm (ETH)
+  if (k.includes("cdbe43")) return { short: "0xcDb...d981", name: "Paradigm", arc: ARCHETYPES.SMART_MONEY, score: 91, defi: 25, trading: 20, chains: 18, holdings: 20, risk: 8, riskPct: 28, style: "Institutional", actPct: 95, activeChains: ["ethereum", "base", "arbitrum", "optimism", "polygon"], traits: [{ i: "\u{1F9E0}", t: "Smart Money Fund" }, { i: "\u{1F4C8}", t: "Major Token Holdings" }, { i: "\u{1F30D}", t: "5 Chains Active" }, { i: "\u{1F6E1}", t: "Conservative Risk" }], flow: "Institutional portfolio across DeFi and L2 ecosystems" };
+  // 2. WHALE — Justin Sun (ETH/BSC)
   if (k.includes("3ddfa8")) return { short: "0x3Dd...5296", name: "Justin Sun", arc: ARCHETYPES.WHALE, score: 65, defi: 12, trading: 15, chains: 14, holdings: 16, risk: 8, riskPct: 62, style: "Strategic Allocator", actPct: 75, activeChains: ["ethereum", "bsc", "arbitrum"], traits: [{ i: "\u{1F40B}", t: "Known Whale" }, { i: "\u{1F4B5}", t: "Stablecoin Reserves" }, { i: "\u{1F3E6}", t: "DeFi Lending Active" }, { i: "\u{1F4CA}", t: "CEX Flow Patterns" }], flow: "Large stablecoin and DeFi lending positions" };
-  if (k.includes("cdbe43")) return { short: "0xcDb...d981", name: "Paradigm", arc: ARCHETYPES.SMART_MONEY, score: 91, defi: 25, trading: 20, chains: 18, holdings: 20, risk: 8, riskPct: 28, style: "Institutional", actPct: 95, activeChains: ["ethereum", "base", "arbitrum", "optimism", "polygon"], traits: [{ i: "\u{1F3E2}", t: "Top VC Fund" }, { i: "\u{1F4C8}", t: "Major Token Holdings" }, { i: "\u{1F30D}", t: "Multi-chain Presence" }, { i: "\u{1F6E1}", t: "Conservative Risk" }], flow: "Institutional portfolio across DeFi and L2 ecosystems" };
-  if (k.includes("28c6c0")) return { short: "0x28C...d60", name: "Binance Hot", arc: ARCHETYPES.WHALE, score: 73, defi: 8, trading: 22, chains: 20, holdings: 15, risk: 8, riskPct: 45, style: "Exchange Ops", actPct: 95, activeChains: ["ethereum", "bsc", "arbitrum", "polygon", "optimism", "base", "avalanche"], traits: [{ i: "\u{1F3DB}", t: "Exchange Hot Wallet" }, { i: "\u26A1", t: "Highest Tx Volume" }, { i: "\u26D3", t: "Multi-chain Liquidity" }, { i: "\u{1F30A}", t: "Major ETH Flows" }], flow: "Primary exchange liquidity across all major chains" };
+  // 3. DEFI_NATIVE — vitalik.eth (ETH multi-chain)
+  if (k.includes("d8da6b")) return { short: "0xd8dA...6045", name: "vitalik.eth", arc: ARCHETYPES.DEFI_NATIVE, score: 82, defi: 24, trading: 16, chains: 20, holdings: 14, risk: 8, riskPct: 32, style: "Builder", actPct: 88, activeChains: ["ethereum", "base", "optimism", "arbitrum", "polygon"], traits: [{ i: "\u{1F3D7}", t: "DeFi Protocol User" }, { i: "\u26D3", t: "5 Chains Active" }, { i: "\u{1F4CA}", t: "UNI, AAVE, LDO Holder" }, { i: "\u{1F504}", t: "Yield Optimizer" }], flow: "Multi-chain DeFi positions across major L2s" };
+  // 4. MEME_HUNTER — Meme Whale (ETH)
+  if (k.includes("7431931")) return { short: "0x7431...1c50E", name: "Meme Whale", arc: ARCHETYPES.MEME_HUNTER, score: 58, defi: 4, trading: 22, chains: 10, holdings: 16, risk: 6, riskPct: 75, style: "Momentum", actPct: 90, activeChains: ["ethereum", "base"], traits: [{ i: "\u{1F438}", t: "PEPE Early Buyer" }, { i: "\u{1F4A5}", t: "High Risk Appetite" }, { i: "\u{1F525}", t: "Meme Momentum" }, { i: "\u26A1", t: "Fast Rotation" }], flow: "Concentrated in trending memecoins with rapid entries" };
+  // 5. PERP_DEGEN — DegenSpartan (ETH/Arbitrum)
   if (k.includes("5b5d51")) return { short: "0x5b5d...c060", name: "DegenSpartan", arc: ARCHETYPES.PERP_DEGEN, score: 67, defi: 6, trading: 25, chains: 12, holdings: 18, risk: 6, riskPct: 78, style: "Leveraged", actPct: 92, activeChains: ["ethereum", "arbitrum"], traits: [{ i: "\u26A1", t: "Perps Specialist" }, { i: "\u{1F4C8}", t: "High PnL Trader" }, { i: "\u{1F525}", t: "High Leverage" }, { i: "\u{1F504}", t: "Rapid Cycles" }], flow: "Leveraged perpetual positions with aggressive sizing" };
+  // 6. DIAMOND_HANDS — Diamond OG (ETH)
   if (k.includes("a87a23")) return { short: "0xA87a...1b7", name: "Diamond OG", arc: ARCHETYPES.DIAMOND_HANDS, score: 62, defi: 15, trading: 5, chains: 12, holdings: 20, risk: 10, riskPct: 22, style: "Long-Term", actPct: 30, activeChains: ["ethereum"], traits: [{ i: "\u{1F48E}", t: "Low Activity" }, { i: "\u{1F4B0}", t: "Blue Chip Heavy" }, { i: "\u{1F6E1}", t: "Conservative" }, { i: "\u231B", t: "Multi-Year Holds" }], flow: "Minimal flow \u2014 long-term holder pattern" };
-  if (k.includes("9wzdxw")) return { short: "9WzD...WWM", name: "Solana Whale", arc: ARCHETYPES.SMART_MONEY, score: 70, defi: 18, trading: 20, chains: 6, holdings: 18, risk: 8, riskPct: 42, style: "Cross-Chain", actPct: 85, activeChains: ["solana"], traits: [{ i: "\u2600", t: "Solana Native" }, { i: "\u{1F4B0}", t: "Multi-Protocol" }, { i: "\u{1F504}", t: "Active DeFi" }, { i: "\u26A1", t: "High Frequency" }], flow: "SOL ecosystem: Jupiter, Raydium, Marinade" };
+  // 7. ACTIVE_TRADER — SOL Trader (Solana)
+  if (k.includes("9wzdxw")) return { short: "9WzD...WWM", name: "SOL Trader", arc: ARCHETYPES.ACTIVE_TRADER, score: 70, defi: 12, trading: 22, chains: 8, holdings: 18, risk: 10, riskPct: 55, style: "Active", actPct: 92, activeChains: ["solana"], traits: [{ i: "\u{1F4CA}", t: "High Frequency" }, { i: "\u2600", t: "Solana Native" }, { i: "\u{1F504}", t: "DEX Active" }, { i: "\u26A1", t: "30+ Txns/Month" }], flow: "Active DEX trading across Jupiter, Raydium" };
   var hash = 0;
   for (var i = 0; i < k.length; i++) hash = ((hash << 5) - hash + k.charCodeAt(i)) | 0;
   var keys = Object.keys(ARCHETYPES); var idx = Math.abs(hash) % keys.length;
