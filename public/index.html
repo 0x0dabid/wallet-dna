@@ -9,11 +9,12 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-var { useState, useCallback } = React;
+var { useState, useCallback, useRef } = React;
 
 var G = {
   bg: "#1E6F3F", bg2: "#257A48", card: "#2A8B52",
@@ -504,6 +505,56 @@ function ScoreCard({ d }) {
   );
 }
 
+// ═══════ IMAGE CAPTURE HELPERS ═══════
+async function captureCardAsCanvas(el) {
+  return html2canvas(el, {
+    backgroundColor: G.card,
+    scale: 2,
+    useCORS: true,
+    logging: false,
+  });
+}
+
+async function captureCardAsBlob(el) {
+  var canvas = await captureCardAsCanvas(el);
+  return new Promise(function(resolve) {
+    canvas.toBlob(function(blob) { resolve(blob); }, "image/png");
+  });
+}
+
+async function copyCardImage(el, setCopyText) {
+  try {
+    var blob = await captureCardAsBlob(el);
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": blob })
+    ]);
+    setCopyText("COPIED!");
+    setTimeout(function() { setCopyText("COPY"); }, 2000);
+  } catch (e) {
+    console.error("Copy failed:", e);
+    // Fallback: download instead
+    downloadCardImage(el);
+  }
+}
+
+async function downloadCardImage(el) {
+  var canvas = await captureCardAsCanvas(el);
+  var link = document.createElement("a");
+  link.download = "wallet-dna.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+
+async function shareToX(el, d) {
+  // Download the image first so user can attach it
+  await downloadCardImage(el);
+  var text = "My WalletDNA Score: " + d.score + "/100 " + d.arc.icon + " " + d.arc.name + "\n\n" +
+    d.traits.map(function(t) { return t.i + " " + t.t; }).join("\n") + "\n\n" +
+    "Get yours at walletdna.vercel.app\n#WalletDNA #OnChain";
+  var url = "https://x.com/intent/post?text=" + encodeURIComponent(text);
+  window.open(url, "_blank");
+}
+
 // ═══════ APP ═══════
 function WalletDNA() {
   var _a = useState(""), addr = _a[0], setAddr = _a[1];
@@ -515,6 +566,8 @@ function WalletDNA() {
   var _m = useState(false), matchFound = _m[0], setMatchFound = _m[1];
   var _p = useState(0), percent = _p[0], setPercent = _p[1];
   var _modal = useState(false), showModal = _modal[0], setShowModal = _modal[1];
+  var _ct = useState("COPY"), copyText = _ct[0], setCopyText = _ct[1];
+  var cardRef = useRef(null);
 
   var go = useCallback(async function(w) {
     if (!w || w.length < 8) { setErr("Enter a valid wallet address or ENS"); return; }
@@ -583,13 +636,14 @@ function WalletDNA() {
 
       {view === "results" && result && (
         <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px", position: "relative", zIndex: 1 }}>
-          <div className="fu d1"><ScoreCard d={result} /></div>
+          <div className="fu d1" ref={cardRef}><ScoreCard d={result} /></div>
 
           {/* SHARE_DNA */}
           <div className="fu d2" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 22, marginBottom: 20 }}>
             <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.faint, letterSpacing: 2 }}>SHARE_DNA</span>
-            <button style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u{1F4CB}"} COPY</button>
-            <button style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u2B07"} DOWNLOAD</button>
+            <button onClick={function(){ if(cardRef.current) copyCardImage(cardRef.current, setCopyText); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+(copyText === "COPIED!" ? G.accent : G.border), borderRadius: 8, color: copyText === "COPIED!" ? G.accent : G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "all 0.3s" }}>{copyText === "COPIED!" ? "\u2713" : "\u{1F4CB}"} {copyText}</button>
+            <button onClick={function(){ if(cardRef.current) shareToX(cardRef.current, result); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#000", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}><span style={{ fontSize: 14, fontWeight: 900 }}>{"\uD835\uDD4F"}</span> SHARE</button>
+            <button onClick={function(){ if(cardRef.current) downloadCardImage(cardRef.current); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u2B07"} SAVE</button>
           </div>
 
           {/* WHY IS MY WALLET SCORE — clickable popup */}
