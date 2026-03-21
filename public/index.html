@@ -1,4 +1,19 @@
-import { useState, useCallback } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WalletDNA — On-Chain Intelligence</title>
+  <meta name="description" content="Drop your wallet. See your on-chain DNA. Powered by Nansen API." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f9ec;</text></svg>" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+var { useState, useCallback } = React;
 
 var G = {
   bg: "#1E6F3F", bg2: "#257A48", card: "#2A8B52",
@@ -414,7 +429,7 @@ function ScoreCard({ d }) {
 }
 
 // ═══════ APP ═══════
-export default function WalletDNA() {
+function WalletDNA() {
   var _a = useState(""), addr = _a[0], setAddr = _a[1];
   var _v = useState("home"), view = _v[0], setView = _v[1];
   var _r = useState(null), result = _r[0], setResult = _r[1];
@@ -519,3 +534,8 @@ export default function WalletDNA() {
     </div>
   );
 }
+
+ReactDOM.createRoot(document.getElementById("root")).render(<WalletDNA />);
+  </script>
+</body>
+</html>
