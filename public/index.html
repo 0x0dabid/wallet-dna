@@ -55,9 +55,9 @@ var SCAN_STEPS = [
 var ENDPOINTS = ["address_labels", "address_balances", "address_transactions", "address_pnl", "address_counterparties", "smart_money_netflow", "token_screener", "token_flows"];
 
 async function nansenPost(path, body) {
-  var res = await fetch("/api/nansen" + path, {
+  var res = await fetch("/api/nansen", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-nansen-path": path },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("Nansen API " + res.status);

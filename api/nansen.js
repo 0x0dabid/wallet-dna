@@ -3,7 +3,10 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const nansenPath = "/" + req.query.path.join("/");
+  const nansenPath = req.headers["x-nansen-path"];
+  if (!nansenPath) {
+    return res.status(400).json({ error: "Missing x-nansen-path header" });
+  }
 
   try {
     const response = await fetch("https://api.nansen.ai" + nansenPath, {
