@@ -41,14 +41,27 @@ var DEMOS = [
   { label: "Binance", addr: "0x28C6c06298d514Db089934071355E5743bf21d60" },
   { label: "DegenSpartan", addr: "0x5b5d51203a0f9079f8aeb098a6523a13f298c060" },
   { label: "Diamond OG", addr: "0xA87a233E8a7d8951fF790a2E39738086cB5F71b7" },
+  { label: "Solana Whale", addr: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" },
 ];
 
+var EVM_CHAINS = ["ethereum", "base", "arbitrum", "polygon", "optimism", "bsc", "avalanche"];
+var ALL_CHAINS = EVM_CHAINS.concat(["solana"]);
+
+function isSolanaAddress(addr) {
+  return !addr.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+}
+
+function getChainsForAddress(addr) {
+  if (isSolanaAddress(addr)) return ["solana"];
+  return EVM_CHAINS;
+}
+
 var SCAN_STEPS = [
-  "Fetching address labels from Nansen", "Querying token balances",
-  "Pulling transaction history (30D)", "Analyzing PnL performance",
+  "Fetching address labels from Nansen", "Querying multi-chain balances",
+  "Scanning EVM chains (ETH, Base, ARB, OP...)", "Scanning Solana ecosystem",
+  "Pulling transaction history (30D)", "Analyzing PnL across chains",
   "Scanning counterparty interactions", "Checking smart money netflows",
   "Running token screener", "Classifying wallet archetype",
-  "Scoring DeFi & trading activity", "Evaluating risk profile",
   "Generating Wallet DNA",
 ];
 
@@ -74,56 +87,94 @@ async function fetchLabels(addr) {
 }
 
 async function fetchBalances(addr) {
-  try {
-    return await nansenPost("/api/v1/profiler/address/current-balance", {
-      chain: "ethereum",
+  var chains = getChainsForAddress(addr);
+  var results = await Promise.allSettled(chains.map(function(chain) {
+    return nansenPost("/api/v1/profiler/address/current-balance", {
+      chain: chain,
       address: addr,
       hide_spam_token: true,
       pagination: { page: 1, per_page: 100 },
+    }).then(function(r) {
+      var items = r && r.data ? r.data : (Array.isArray(r) ? r : []);
+      return items.map(function(b) { b._chain = chain; return b; });
     });
-  } catch (e) { console.warn("balances failed:", e); return { data: [] }; }
+  }));
+  var allData = [];
+  var activeChains = [];
+  results.forEach(function(r, i) {
+    if (r.status === "fulfilled" && r.value.length > 0) {
+      allData = allData.concat(r.value);
+      activeChains.push(chains[i]);
+    }
+  });
+  return { data: allData, _activeChains: activeChains };
 }
 
 async function fetchTransactions(addr) {
-  try {
-    var now = new Date();
-    var from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return await nansenPost("/api/v1/profiler/address/transactions", {
+  var chains = getChainsForAddress(addr);
+  var now = new Date();
+  var from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  var results = await Promise.allSettled(chains.map(function(chain) {
+    return nansenPost("/api/v1/profiler/address/transactions", {
       address: addr,
-      chain: "ethereum",
+      chain: chain,
       date: { from: from.toISOString(), to: now.toISOString() },
       hide_spam_token: true,
       pagination: { page: 1, per_page: 50 },
       order_by: [{ field: "block_timestamp", direction: "DESC" }],
+    }).then(function(r) {
+      var items = r && r.data ? r.data : (Array.isArray(r) ? r : []);
+      return items.map(function(t) { t._chain = chain; return t; });
     });
-  } catch (e) { console.warn("transactions failed:", e); return { data: [] }; }
+  }));
+  var allData = [];
+  results.forEach(function(r) {
+    if (r.status === "fulfilled") allData = allData.concat(r.value);
+  });
+  return { data: allData };
 }
 
 async function fetchPnl(addr) {
-  try {
-    return await nansenPost("/api/v1/profiler/address/pnl-summary", {
-      chain: "ethereum",
+  var chains = getChainsForAddress(addr);
+  var results = await Promise.allSettled(chains.map(function(chain) {
+    return nansenPost("/api/v1/profiler/address/pnl-summary", {
+      chain: chain,
       address: addr,
     });
-  } catch (e) { console.warn("pnl failed:", e); return null; }
+  }));
+  var best = null;
+  results.forEach(function(r) {
+    if (r.status === "fulfilled" && r.value) {
+      if (!best) best = r.value;
+    }
+  });
+  return best;
 }
 
 async function fetchCounterparties(addr) {
-  try {
-    return await nansenPost("/api/v1/profiler/address/counterparties", {
-      chain: "ethereum",
+  var chains = getChainsForAddress(addr);
+  var results = await Promise.allSettled(chains.map(function(chain) {
+    return nansenPost("/api/v1/profiler/address/counterparties", {
+      chain: chain,
       address: addr,
       source_input: "Combined",
       group_by: "wallet",
       pagination: { page: 1, per_page: 20 },
     });
-  } catch (e) { console.warn("counterparties failed:", e); return { data: [] }; }
+  }));
+  var allData = [];
+  results.forEach(function(r) {
+    if (r.status === "fulfilled" && r.value && r.value.data) {
+      allData = allData.concat(r.value.data);
+    }
+  });
+  return { data: allData };
 }
 
 async function fetchSmartMoneyNetflow() {
   try {
     return await nansenPost("/api/v1/smart-money/netflow", {
-      chains: ["ethereum"],
+      chains: ALL_CHAINS,
       filters: { include_smart_money_labels: ["Fund", "Smart Trader", "30D Smart Trader"] },
       pagination: { page: 1, per_page: 10 },
       order_by: [{ field: "net_flow_7d_usd", direction: "DESC" }],
@@ -134,7 +185,7 @@ async function fetchSmartMoneyNetflow() {
 async function fetchTokenScreener() {
   try {
     return await nansenPost("/api/v1/token-screener", {
-      chains: ["ethereum", "solana", "base"],
+      chains: ALL_CHAINS,
       timeframe: "24h",
       pagination: { page: 1, per_page: 10 },
       filters: { only_smart_money: true },
@@ -148,8 +199,8 @@ function classifyWallet(labels, balances, txData, pnlData) {
   var balArr = balances && balances.data ? balances.data : (Array.isArray(balances) ? balances : []);
   var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
   var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
-  var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal"];
-  var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo"];
+  var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal","jup","ray","mnde","orca","msol","drift","pyth","marinade"];
+  var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo","popcat","wen","myro","samo","jto"];
   var STABLE_SYMBOLS = ["usdt","usdc","dai","frax","tusd","busd"];
   balArr.forEach(function(b) {
     var val = parseFloat(b.value_usd || b.usdValue || 0);
@@ -178,7 +229,10 @@ function classifyWallet(labels, balances, txData, pnlData) {
 
   var defiScore = Math.min(25, defiTokens * 5 + (isFund ? 10 : 0));
   var tradingScore = Math.min(25, Math.round(txCount / 2));
-  var chainsScore = Math.min(20, balArr.length > 20 ? 18 : Math.round(balArr.length * 0.9));
+  var chainSet = {};
+  balArr.forEach(function(b) { if (b._chain) chainSet[b._chain] = true; });
+  var numChains = Math.max(1, Object.keys(chainSet).length);
+  var chainsScore = Math.min(20, numChains * 3 + (balArr.length > 20 ? 8 : Math.round(balArr.length * 0.4)));
   var holdingsScore = Math.min(20, totalUsd > 50000000 ? 20 : totalUsd > 10000000 ? 16 : totalUsd > 1000000 ? 12 : totalUsd > 100000 ? 8 : 4);
   var riskScore = Math.min(10, stableTokens >= 2 ? 8 : memeTokens >= 3 ? 2 : 5);
   var total = defiScore + tradingScore + chainsScore + holdingsScore + riskScore;
@@ -187,6 +241,7 @@ function classifyWallet(labels, balances, txData, pnlData) {
 
   var traits = [];
   if (labelNames.length > 0) traits.push({ i: "\u{1F3F7}", t: labels[0].label || labels[0].fullname || "Labeled" });
+  if (numChains > 1) traits.push({ i: "\u26D3", t: numChains + " Chains Active" });
   if (totalUsd > 1000000) traits.push({ i: "\u{1F4B0}", t: "$" + (totalUsd / 1000000).toFixed(1) + "M Portfolio" });
   if (defiTokens > 0) traits.push({ i: "\u{1F3D7}", t: defiTokens + " DeFi Tokens" });
   if (memeTokens > 0) traits.push({ i: "\u{1F438}", t: memeTokens + " Meme Tokens" });
@@ -226,6 +281,11 @@ async function buildFromAPI(addr) {
   var classified = classifyWallet(labels, balances, txData, pnlData);
   classified.short = short;
   classified.name = name;
+  if (balances && balances._activeChains && balances._activeChains.length > 0) {
+    classified.activeChains = balances._activeChains;
+  } else {
+    classified.activeChains = getChainsForAddress(addr);
+  }
   return classified;
 }
 
@@ -253,6 +313,7 @@ function build(addr) {
   if (k.includes("28c6c0")) return { short: "0x28C...d60", name: "Binance Hot", arc: ARCHETYPES.WHALE, score: 73, defi: 8, trading: 22, chains: 20, holdings: 15, risk: 8, riskPct: 45, style: "Exchange Ops", actPct: 95, traits: [{ i: "\u{1F3DB}", t: "Exchange Hot Wallet" }, { i: "\u26A1", t: "Highest Tx Volume" }, { i: "\u26D3", t: "Multi-chain Liquidity" }, { i: "\u{1F30A}", t: "WETH Inflow $17M" }], flow: "Primary market maker" };
   if (k.includes("5b5d51")) return { short: "0x5b5d...c060", name: "DegenSpartan", arc: ARCHETYPES.PERP_DEGEN, score: 76, defi: 6, trading: 25, chains: 8, holdings: 12, risk: 25, riskPct: 78, style: "Leveraged", actPct: 92, traits: [{ i: "\u26A1", t: "Hyperliquid Top Trader" }, { i: "\u{1F4C8}", t: "$14.2M PnL (7D)" }, { i: "\u{1F525}", t: "High Leverage" }, { i: "\u{1F504}", t: "Rapid Cycles" }], flow: "Token Millionaire: BTC Short\u2192Long $3.9M" };
   if (k.includes("a87a23")) return { short: "0xA87a...1b7", name: "Diamond OG", arc: ARCHETYPES.DIAMOND_HANDS, score: 70, defi: 8, trading: 5, chains: 6, holdings: 28, risk: 23, riskPct: 22, style: "Long-Term", actPct: 30, traits: [{ i: "\u{1F48E}", t: "Low Activity" }, { i: "\u{1F4B0}", t: "Blue Chip Heavy" }, { i: "\u{1F6E1}", t: "Conservative" }, { i: "\u231B", t: "Multi-Year Holds" }], flow: "Minimal flow \u2014 holder pattern" };
+  if (k.includes("9wzdxw")) return { short: "9WzD...WWM", name: "Solana Whale", arc: ARCHETYPES.SMART_MONEY, score: 78, defi: 18, trading: 20, chains: 6, holdings: 18, risk: 16, riskPct: 42, style: "Cross-Chain", actPct: 85, traits: [{ i: "\u2600", t: "Solana Native" }, { i: "\u{1F4B0}", t: "Multi-Protocol" }, { i: "\u{1F504}", t: "Active DeFi" }, { i: "\u26A1", t: "High Frequency" }], flow: "SOL ecosystem: Jupiter, Raydium, Marinade" };
   var hash = 0;
   for (var i = 0; i < k.length; i++) hash = ((hash << 5) - hash + k.charCodeAt(i)) | 0;
   var keys = Object.keys(ARCHETYPES); var idx = Math.abs(hash) % keys.length;
@@ -398,7 +459,12 @@ function ScoreCard({ d }) {
             <div>
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ARCHETYPE: <span style={{ fontWeight: 700, color: G.text }}>{d.arc.name.toUpperCase()}</span></div>
               <div style={{ fontSize: "clamp(20px,4.2vw,36px)", fontWeight: 900, color: G.text, lineHeight: 1.05, letterSpacing: -1, marginBottom: 4 }}>{d.arc.name}</div>
-              <div style={{ fontSize: 12, color: G.sec, marginBottom: 10 }}>{d.style} {"\u00B7"} Score <span style={{ fontWeight: 700, color: G.text }}>{d.score}</span>/100</div>
+              <div style={{ fontSize: 12, color: G.sec, marginBottom: 4 }}>{d.style} {"\u00B7"} Score <span style={{ fontWeight: 700, color: G.text }}>{d.score}</span>/100</div>
+              {d.activeChains && d.activeChains.length > 0 && (
+                <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
+                  {d.activeChains.map(function(c) { return <span key={c} style={{ padding: "1px 6px", background: G.accent+"20", border: "1px solid "+G.accent+"40", borderRadius: 4, fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.accent, textTransform: "uppercase" }}>{c}</span>; })}
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {d.traits.map(function(t,i) { return <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 7, alignSelf: "flex-start" }}><span style={{ fontSize: 11 }}>{t.i}</span><span style={{ fontSize: 11, fontWeight: 500, color: G.text }}>{t.t}</span></div>; })}
               </div>
@@ -486,7 +552,7 @@ function WalletDNA() {
             <div style={{ display: "flex", gap: 0, marginBottom: 14 }}>
               <div style={{ flex: 1, display: "flex", alignItems: "center", background: G.bg2, border: "1px solid "+G.border, borderRadius: "10px 0 0 10px", padding: "0 14px" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.faint, marginRight: 10 }}>{"\u2192"}</span>
-                <input value={addr} onChange={function(e){setAddr(e.target.value);}} placeholder="0x... or ENS name" onKeyDown={function(e){if(e.key==="Enter")go(addr);}} style={{ flex: 1, border: "none", background: "transparent", fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.text, padding: "13px 0" }} />
+                <input value={addr} onChange={function(e){setAddr(e.target.value);}} placeholder="0x... / SOL address / ENS" onKeyDown={function(e){if(e.key==="Enter")go(addr);}} style={{ flex: 1, border: "none", background: "transparent", fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.text, padding: "13px 0" }} />
               </div>
               <button onClick={function(){go(addr);}} style={{ padding: "13px 22px", background: G.accent, border: "none", borderRadius: "0 10px 10px 0", color: G.bg, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Analyze</button>
             </div>
