@@ -45,7 +45,7 @@ var NANSEN_BASE = "https://api.nansen.ai";
 async function nansenPost(path, body) {
   var res = await fetch(NANSEN_BASE + path, {
     method: "POST",
-    headers: { "apiKey": NANSEN_API_KEY, "Content-Type": "application/json" },
+    headers: { "apikey": NANSEN_API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("Nansen API " + res.status);
@@ -63,11 +63,13 @@ async function fetchLabels(addr) {
 
 async function fetchBalances(addr) {
   try {
-    return await nansenPost("/api/beta/profiler/address/balances", {
-      parameters: { chain: "all", walletAddresses: [addr], suspiciousFilter: "on" },
-      pagination: { page: 1, recordsPerPage: 100 },
+    return await nansenPost("/api/v1/profiler/address/current-balance", {
+      chain: "ethereum",
+      address: addr,
+      hide_spam_token: true,
+      pagination: { page: 1, per_page: 100 },
     });
-  } catch (e) { console.warn("balances failed:", e); return []; }
+  } catch (e) { console.warn("balances failed:", e); return { data: [] }; }
 }
 
 async function fetchTransactions(addr) {
@@ -87,8 +89,9 @@ async function fetchTransactions(addr) {
 
 async function fetchPnl(addr) {
   try {
-    return await nansenPost("/api/beta/profiler/address/pnl-summary", {
-      parameters: { chain: "all", walletAddresses: [addr] },
+    return await nansenPost("/api/v1/profiler/address/pnl-summary", {
+      chain: "ethereum",
+      address: addr,
     });
   } catch (e) { console.warn("pnl failed:", e); return null; }
 }
@@ -96,12 +99,13 @@ async function fetchPnl(addr) {
 async function fetchCounterparties(addr) {
   try {
     return await nansenPost("/api/v1/profiler/address/counterparties", {
-      parameters: {
-        walletAddresses: [addr], chain: "all", sourceInput: "Combined", groupBy: "wallet",
-      },
-      pagination: { page: 1, recordsPerPage: 20 },
+      chain: "ethereum",
+      address: addr,
+      source_input: "Combined",
+      group_by: "wallet",
+      pagination: { page: 1, per_page: 20 },
     });
-  } catch (e) { console.warn("counterparties failed:", e); return []; }
+  } catch (e) { console.warn("counterparties failed:", e); return { data: [] }; }
 }
 
 async function fetchSmartMoneyNetflow() {
@@ -129,16 +133,16 @@ async function fetchTokenScreener() {
 
 function classifyWallet(labels, balances, txData, pnlData) {
   var labelNames = Array.isArray(labels) ? labels.map(function(l) { return (l.label || "").toLowerCase(); }) : [];
-  var balArr = Array.isArray(balances) ? balances : (balances && balances.data ? balances.data : []);
+  var balArr = balances && balances.data ? balances.data : (Array.isArray(balances) ? balances : []);
   var txArr = txData && txData.data ? txData.data : (Array.isArray(txData) ? txData : []);
   var totalUsd = 0; var defiTokens = 0; var memeTokens = 0; var stableTokens = 0;
   var DEFI_SYMBOLS = ["aave","uni","crv","comp","mkr","snx","ldo","pendle","gmx","sushi","yfi","bal"];
   var MEME_SYMBOLS = ["pepe","doge","shib","floki","bonk","wif","brett","mog","turbo"];
   var STABLE_SYMBOLS = ["usdt","usdc","dai","frax","tusd","busd"];
   balArr.forEach(function(b) {
-    var val = parseFloat(b.usdValue || b.value_usd || 0);
+    var val = parseFloat(b.value_usd || b.usdValue || 0);
     totalUsd += val;
-    var sym = (b.symbol || "").toLowerCase();
+    var sym = (b.token_symbol || b.symbol || "").toLowerCase();
     if (DEFI_SYMBOLS.indexOf(sym) >= 0) defiTokens++;
     if (MEME_SYMBOLS.indexOf(sym) >= 0) memeTokens++;
     if (STABLE_SYMBOLS.indexOf(sym) >= 0) stableTokens++;
@@ -178,7 +182,7 @@ function classifyWallet(labels, balances, txData, pnlData) {
   if (traits.length === 0) traits.push({ i: arc.icon, t: arc.name });
   traits = traits.slice(0, 4);
 
-  var topToken = balArr.length > 0 ? (balArr[0].symbol || "?") + " $" + (parseFloat(balArr[0].usdValue || balArr[0].value_usd || 0) / 1000).toFixed(0) + "k" : "No balances found";
+  var topToken = balArr.length > 0 ? (balArr[0].token_symbol || balArr[0].symbol || "?") + " $" + (parseFloat(balArr[0].value_usd || balArr[0].usdValue || 0) / 1000).toFixed(0) + "k" : "No balances found";
 
   return {
     arc: arc, score: total, defi: defiScore, trading: tradingScore,
