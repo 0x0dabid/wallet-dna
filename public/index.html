@@ -73,7 +73,9 @@ function extractArray(obj) {
   if (Array.isArray(obj)) return obj;
   if (obj && typeof obj === "object") {
     // Check common keys first
-    for (var k of ["data", "results", "items", "records", "labels"]) {
+    var common = ["data", "results", "items", "records", "labels"];
+    for (var c = 0; c < common.length; c++) {
+      var k = common[c];
       if (obj[k]) {
         if (Array.isArray(obj[k])) return obj[k];
         if (typeof obj[k] === "object") {
@@ -629,6 +631,16 @@ function ScoreCard({ d, mob }) {
                 {d.traits.map(function(t,i) { return <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: mob ? "2px 6px" : "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 7, alignSelf: "flex-start" }}><span style={{ fontSize: mob ? 10 : 11 }}>{t.i}</span><span style={{ fontSize: mob ? 10 : 11, fontWeight: 500, color: G.text }}>{t.t}</span></div>; })}
               </div>
             </div>
+            {!mob && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
+                  <div style={{ width: 40, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
+                </div>
+              </div>
+            )}
           </div>
           {mob ? (
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end", justifyContent: "space-between" }}>
@@ -647,29 +659,18 @@ function ScoreCard({ d, mob }) {
                 <span style={{ fontSize: 22, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 14, color: G.sec }}>/100</span></span>
               </div>
             </div>
-          ) : (
-            <React.Fragment>
-              <div style={{ flex: "1 1 58%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
-                    <div style={{ width: 40, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
-                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
-                  </div>
-                </div>
+          ) : null}
+          {!mob && (
+            <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec }}>{d.short}</div></div>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{d.arc.icon}</div>
               </div>
-              <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec }}>{d.short}</div></div>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{d.arc.icon}</div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
-                  {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 500, color: G.sec, letterSpacing: 1 }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 15, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
-                </div>
-                <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div><span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 16, color: G.sec }}>/100</span></span></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
+                {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 500, color: G.sec, letterSpacing: 1 }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 15, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
               </div>
-            </React.Fragment>
+              <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div><span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 16, color: G.sec }}>/100</span></span></div>
+            </div>
           )}
         </div>
       </div>
