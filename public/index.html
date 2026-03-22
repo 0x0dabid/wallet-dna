@@ -48,6 +48,21 @@ var DEMOS = [
 var EVM_CHAINS = ["ethereum", "base", "arbitrum", "polygon", "optimism", "bsc", "avalanche"];
 var ALL_CHAINS = EVM_CHAINS.concat(["solana"]);
 
+function isENSName(addr) {
+  return /^[a-zA-Z0-9][a-zA-Z0-9.-]*\.eth$/i.test(addr);
+}
+
+async function resolveENSName(name) {
+  try {
+    var resp = await fetch("https://api.ensideas.com/ens/resolve/" + encodeURIComponent(name));
+    var json = await resp.json();
+    if (json && json.address && json.address !== "0x0000000000000000000000000000000000000000") {
+      return json.address;
+    }
+  } catch(e) { console.error("ENS resolution failed:", e); }
+  return null;
+}
+
 function isSolanaAddress(addr) {
   return !addr.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
 }
@@ -765,20 +780,33 @@ function WalletDNA() {
   var cardRef = useRef(null);
 
   var go = useCallback(async function(w) {
-    if (!w || w.length < 8) { setErr("Enter a valid wallet address or ENS"); return; }
-    setScanAddr(w); setView("loading"); setErr(null); setMatchFound(false); setPercent(0);
+    if (!w || w.length < 3) { setErr("Enter a valid wallet address or ENS"); return; }
+
+    // Resolve ENS names to addresses
+    var resolvedAddr = w.trim();
+    if (isENSName(resolvedAddr)) {
+      setScanAddr(resolvedAddr); setView("loading"); setErr(null); setMatchFound(false); setPercent(0);
+      setSteps([{ label: "Resolving ENS name...", done: false, active: true }]);
+      var ensAddr = await resolveENSName(resolvedAddr);
+      if (!ensAddr) { setErr("Could not resolve ENS name: " + resolvedAddr); setView("home"); return; }
+      resolvedAddr = ensAddr;
+    }
+
+    if (resolvedAddr.length < 8) { setErr("Enter a valid wallet address or ENS"); setView("home"); return; }
+
+    setScanAddr(resolvedAddr); setView("loading"); setErr(null); setMatchFound(false); setPercent(0);
     var s = SCAN_STEPS.map(function(label, i) { return { label: label, done: false, active: i === 0 }; });
     setSteps(s.slice());
     var total = s.length;
 
     // For known demo wallets, use hardcoded data directly (guaranteed correct archetype).
     // For unknown wallets, call the API and fall back to hash-based if it fails.
-    var isDemoWallet = DEMOS.some(function(d) { return d.addr.toLowerCase() === w.toLowerCase(); });
+    var isDemoWallet = DEMOS.some(function(d) { return d.addr.toLowerCase() === resolvedAddr.toLowerCase(); });
     var apiPromise = isDemoWallet
-      ? Promise.resolve(build(w))
-      : buildFromAPI(w).catch(function(e) {
+      ? Promise.resolve(build(resolvedAddr))
+      : buildFromAPI(resolvedAddr).catch(function(e) {
           console.error("API failed, falling back:", e);
-          return build(w);
+          return build(resolvedAddr);
         });
 
     // Run scanning animation — speed it up but keep visual effect
