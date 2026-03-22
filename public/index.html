@@ -523,8 +523,8 @@ function ScanningPage({ address, steps, percent, matchFound }) {
 function AnalysisModal({ d, onClose }) {
   var bk = [{ l: "DeFi", v: d.defi, m: 25 }, { l: "Trading", v: d.trading, m: 25 }, { l: "Chains", v: d.chains, m: 20 }, { l: "Holdings", v: d.holdings, m: 20 }, { l: "Risk Mgt", v: d.risk, m: 10 }];
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={function(e) { e.stopPropagation(); }} style={{ background: G.bg, border: "1px solid "+G.border, borderRadius: 16, maxWidth: 540, width: "100%", maxHeight: "85vh", overflowY: "auto", animation: "modalIn 0.3s ease both", padding: 24 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", zIndex: 1000, display: "flex", alignItems: window.innerWidth <= 520 ? "flex-end" : "center", justifyContent: "center", padding: window.innerWidth <= 520 ? 0 : 20 }}>
+      <div onClick={function(e) { e.stopPropagation(); }} style={{ background: G.bg, border: "1px solid "+G.border, borderRadius: window.innerWidth <= 520 ? "16px 16px 0 0" : 16, maxWidth: 540, width: "100%", maxHeight: window.innerWidth <= 520 ? "90vh" : "85vh", overflowY: "auto", animation: "modalIn 0.3s ease both", padding: window.innerWidth <= 520 ? 16 : 24 }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, fontWeight: 700, color: G.text, letterSpacing: 1 }}>WHY IS MY WALLET SCORE {d.score}?</div>
@@ -596,54 +596,81 @@ function AnalysisModal({ d, onClose }) {
 }
 
 // ═══════ SCORE CARD ═══════
-function ScoreCard({ d }) {
+function ScoreCard({ d, mob }) {
   var bk = [{ l: "DEFI", v: d.defi },{ l: "TRADING", v: d.trading },{ l: "CHAINS", v: d.chains },{ l: "HOLDINGS", v: d.holdings },{ l: "RISK MGT", v: d.risk }];
   return (
-    <div data-scorecard="true" style={{ background: G.card, borderRadius: 16, position: "relative", overflow: "hidden", aspectRatio: "16/9", maxWidth: 680, margin: "0 auto", border: "1px solid "+G.border, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
+    <div data-scorecard="true" style={{ background: G.card, borderRadius: mob ? 12 : 16, position: "relative", overflow: "hidden", aspectRatio: mob ? "auto" : "16/9", maxWidth: 680, margin: "0 auto", border: "1px solid "+G.border, boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
       <div style={{ position: "absolute", inset: 0, opacity: 0.04, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "150px" }} />
       <div style={{ position: "absolute", left: -1, top: "30%", width: 3, height: "35%", background: G.accent, filter: "blur(3px)", opacity: 0.3, animation: "lineGlow 2.5s ease-in-out infinite" }} />
       {[["top","left"],["top","right"],["bottom","left"],["bottom","right"]].map(function(p,i) { var v=p[0],h=p[1],s={position:"absolute",width:16,height:16};s[v]=8;s[h]=8;s["border"+v.charAt(0).toUpperCase()+v.slice(1)]="2px solid "+G.accentDim;s["border"+h.charAt(0).toUpperCase()+h.slice(1)]="2px solid "+G.accentDim;s.borderRadius=(v==="top"&&h==="left")?"3px 0 0 0":(v==="top"&&h==="right")?"0 3px 0 0":(v==="bottom"&&h==="right")?"0 0 3px 0":"0 0 0 3px";return <div key={i} style={s}/>; })}
-      <div style={{ position: "relative", zIndex: 1, padding: "clamp(14px,2.8vw,24px)", height: "100%", display: "flex", flexDirection: "column" }}>
-        <div style={{ marginBottom: 6 }}>
+      <div style={{ position: "relative", zIndex: 1, padding: mob ? 14 : "clamp(14px,2.8vw,24px)", height: "100%", display: "flex", flexDirection: "column" }}>
+        <div style={{ marginBottom: mob ? 4 : 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", background: "rgba(0,0,0,0.2)", borderRadius: 6, border: "1px solid "+G.border }}>
-            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, fontWeight: 700, color: G.text, letterSpacing: 1.5 }}>WALLET DNA</span>
+            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: mob ? 9 : 10, fontWeight: 700, color: G.text, letterSpacing: 1.5 }}>WALLET DNA</span>
             <span style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
           </span>
+          {mob && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, color: G.sec }}>{d.short}</div></div>
+            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{d.arc.icon}</div>
+          </div>}
         </div>
-        <div style={{ display: "flex", gap: "clamp(10px,2vw,20px)", flex: 1 }}>
-          <div style={{ flex: "1 1 58%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", flexDirection: mob ? "column" : "row", gap: mob ? 12 : "clamp(10px,2vw,20px)", flex: 1 }}>
+          <div style={{ flex: mob ? "none" : "1 1 58%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ARCHETYPE: <span style={{ fontWeight: 700, color: G.text }}>{d.arc.name.toUpperCase()}</span></div>
-              <div style={{ fontSize: "clamp(20px,4.2vw,36px)", fontWeight: 900, color: G.text, lineHeight: 1.05, letterSpacing: -1, marginBottom: 4 }}>{d.arc.name}</div>
-              <div style={{ fontSize: 12, color: G.sec, marginBottom: 4 }}>{d.style} {"\u00B7"} Score <span style={{ fontWeight: 700, color: G.text }}>{d.score}</span>/100</div>
+              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: mob ? 8 : 9, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ARCHETYPE: <span style={{ fontWeight: 700, color: G.text }}>{d.arc.name.toUpperCase()}</span></div>
+              <div style={{ fontSize: mob ? 24 : "clamp(20px,4.2vw,36px)", fontWeight: 900, color: G.text, lineHeight: 1.05, letterSpacing: -1, marginBottom: 4 }}>{d.arc.name}</div>
+              <div style={{ fontSize: mob ? 11 : 12, color: G.sec, marginBottom: 4 }}>{d.style} {"\u00B7"} Score <span style={{ fontWeight: 700, color: G.text }}>{d.score}</span>/100</div>
               {d.activeChains && d.activeChains.length > 0 && (
                 <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
-                  {d.activeChains.map(function(c) { return <span key={c} style={{ padding: "1px 6px", background: G.accent+"20", border: "1px solid "+G.accent+"40", borderRadius: 4, fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.accent, textTransform: "uppercase" }}>{c}</span>; })}
+                  {d.activeChains.map(function(c) { return <span key={c} style={{ padding: "1px 6px", background: G.accent+"20", border: "1px solid "+G.accent+"40", borderRadius: 4, fontFamily: "'JetBrains Mono'", fontSize: mob ? 7 : 8, fontWeight: 600, color: G.accent, textTransform: "uppercase" }}>{c}</span>; })}
                 </div>
               )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {d.traits.map(function(t,i) { return <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 7, alignSelf: "flex-start" }}><span style={{ fontSize: 11 }}>{t.i}</span><span style={{ fontSize: 11, fontWeight: 500, color: G.text }}>{t.t}</span></div>; })}
-              </div>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
-                <div style={{ width: 40, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
+              <div style={{ display: "flex", flexDirection: mob ? "row" : "column", flexWrap: mob ? "wrap" : "nowrap", gap: 3 }}>
+                {d.traits.map(function(t,i) { return <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: mob ? "2px 6px" : "3px 8px", background: G.pill, border: "1px solid "+G.pillB, borderRadius: 7, alignSelf: "flex-start" }}><span style={{ fontSize: mob ? 10 : 11 }}>{t.i}</span><span style={{ fontSize: mob ? 10 : 11, fontWeight: 500, color: G.text }}>{t.t}</span></div>; })}
               </div>
             </div>
           </div>
-          <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec }}>{d.short}</div></div>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{d.arc.icon}</div>
+          {mob ? (
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
+                  <div style={{ width: 30, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 500, color: G.sec }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div>
+                <span style={{ fontSize: 22, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 14, color: G.sec }}>/100</span></span>
+              </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
-              {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 500, color: G.sec, letterSpacing: 1 }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 15, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
-            </div>
-            <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div><span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 16, color: G.sec }}>/100</span></span></div>
-          </div>
+          ) : (
+            <React.Fragment>
+              <div style={{ flex: "1 1 58%", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>RISK LEVEL</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.riskPct}%</span>
+                    <div style={{ width: 40, height: 4, background: "rgba(0,0,0,0.25)", borderRadius: 3 }}><div style={{ width: d.riskPct+"%", height: "100%", background: G.accent, borderRadius: 3 }} /></div>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: G.accent }} />
+                  </div>
+                </div>
+              </div>
+              <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ textAlign: "right" }}><div style={{ fontSize: 14, fontWeight: 700, color: G.text }}>{d.name}</div><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, color: G.sec }}>{d.short}</div></div>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,0,0,0.2)", border: "1px solid "+G.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{d.arc.icon}</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
+                  {bk.map(function(s,i) { return <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 9, fontWeight: 500, color: G.sec, letterSpacing: 1 }}>{s.l}</span><span style={{ fontFamily: "'JetBrains Mono'", fontSize: 15, fontWeight: 800, color: G.text }}>+{s.v}</span></div>; })}
+                </div>
+                <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fontWeight: 600, color: G.sec, letterSpacing: 2, marginBottom: 2 }}>ACTIVITY</div><span style={{ fontSize: 26, fontWeight: 900, color: G.text, fontStyle: "italic" }}>{d.actPct}<span style={{ fontSize: 16, color: G.sec }}>/100</span></span></div>
+              </div>
+            </React.Fragment>
+          )}
         </div>
       </div>
     </div>
@@ -712,7 +739,18 @@ async function shareToX(el, d) {
 }
 
 // ═══════ APP ═══════
+function useIsMobile(bp) {
+  var _s = useState(window.innerWidth <= (bp || 520));
+  useEffect(function() {
+    var handler = function() { _s[1](window.innerWidth <= (bp || 520)); };
+    window.addEventListener("resize", handler);
+    return function() { window.removeEventListener("resize", handler); };
+  }, []);
+  return _s[0];
+}
+
 function WalletDNA() {
+  var mob = useIsMobile();
   var _a = useState(""), addr = _a[0], setAddr = _a[1];
   var _v = useState("home"), view = _v[0], setView = _v[1];
   var _r = useState(null), result = _r[0], setResult = _r[1];
@@ -768,16 +806,16 @@ function WalletDNA() {
       <div style={{ position: "fixed", inset: 0, opacity: 0.03, backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "150px", pointerEvents: "none" }} />
 
       {view === "home" && (
-        <div style={{ maxWidth: 500, margin: "0 auto", padding: "20px 20px 40px", minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", position: "relative", zIndex: 1 }}>
+        <div style={{ maxWidth: 500, margin: "0 auto", padding: mob ? "16px 16px 32px" : "20px 20px 40px", minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", position: "relative", zIndex: 1 }}>
           <h1 className="fu d1" style={{ fontSize: "clamp(38px,9vw,56px)", fontWeight: 900, textAlign: "center", lineHeight: 1, marginBottom: 10, letterSpacing: -2 }}><span style={{ color: G.text }}>Wallet</span><span style={{ color: G.accent }}>DNA</span></h1>
-          <p className="fu d2" style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color: G.sec, textAlign: "center", maxWidth: 360, lineHeight: 1.5, marginBottom: 28 }}>Drop your wallet. See your on-chain DNA.</p>
+          <p className="fu d2" style={{ fontFamily: "'JetBrains Mono'", fontSize: mob ? 11 : 12, color: G.sec, textAlign: "center", maxWidth: 360, lineHeight: 1.5, marginBottom: mob ? 20 : 28 }}>Drop your wallet. See your on-chain DNA.</p>
           <div className="fu d3" style={{ width: "100%", maxWidth: 420 }}>
-            <div style={{ display: "flex", gap: 0, marginBottom: 14 }}>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", background: G.bg2, border: "1px solid "+G.border, borderRadius: "10px 0 0 10px", padding: "0 14px" }}>
-                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.faint, marginRight: 10 }}>{"\u2192"}</span>
-                <input value={addr} onChange={function(e){setAddr(e.target.value);}} placeholder="0x... / SOL address / ENS" onKeyDown={function(e){if(e.key==="Enter")go(addr);}} style={{ flex: 1, border: "none", background: "transparent", fontFamily: "'JetBrains Mono'", fontSize: 14, color: G.text, padding: "13px 0" }} />
+            <div style={{ display: "flex", gap: 0, marginBottom: mob ? 10 : 14 }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", background: G.bg2, border: "1px solid "+G.border, borderRadius: "10px 0 0 10px", padding: mob ? "0 10px" : "0 14px" }}>
+                <span style={{ fontFamily: "'JetBrains Mono'", fontSize: mob ? 12 : 14, color: G.faint, marginRight: mob ? 6 : 10 }}>{"\u2192"}</span>
+                <input value={addr} onChange={function(e){setAddr(e.target.value);}} placeholder="0x... / SOL address / ENS" onKeyDown={function(e){if(e.key==="Enter")go(addr);}} style={{ flex: 1, border: "none", background: "transparent", fontFamily: "'JetBrains Mono'", fontSize: mob ? 12 : 14, color: G.text, padding: mob ? "11px 0" : "13px 0" }} />
               </div>
-              <button onClick={function(){go(addr);}} style={{ padding: "13px 22px", background: G.accent, border: "none", borderRadius: "0 10px 10px 0", color: G.bg, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Analyze</button>
+              <button onClick={function(){go(addr);}} style={{ padding: mob ? "11px 16px" : "13px 22px", background: G.accent, border: "none", borderRadius: "0 10px 10px 0", color: G.bg, fontWeight: 700, fontSize: mob ? 13 : 14, cursor: "pointer" }}>Analyze</button>
             </div>
             {err && <p style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.red, textAlign: "center" }}>{err}</p>}
           </div>
@@ -795,15 +833,15 @@ function WalletDNA() {
       )}
 
       {view === "results" && result && (
-        <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 20px", position: "relative", zIndex: 1 }}>
-          <div className="fu d1"><div ref={cardRef}><ScoreCard d={result} /></div></div>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: mob ? "20px 12px" : "40px 20px", position: "relative", zIndex: 1 }}>
+          <div className="fu d1"><div ref={cardRef}><ScoreCard d={result} mob={mob} /></div></div>
 
           {/* SHARE_DNA */}
-          <div className="fu d2" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 22, marginBottom: 20 }}>
-            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10, color: G.faint, letterSpacing: 2 }}>SHARE_DNA</span>
-            <button onClick={function(){ if(cardRef.current) copyCardImage(cardRef.current, setCopyText); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+(copyText === "COPIED!" ? G.accent : G.border), borderRadius: 8, color: copyText === "COPIED!" ? G.accent : G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "all 0.3s" }}>{copyText === "COPIED!" ? "\u2713" : "\u{1F4CB}"} {copyText}</button>
-            <button onClick={function(){ if(cardRef.current) shareToX(cardRef.current, result); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#000", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}><span style={{ fontSize: 14, fontWeight: 900 }}>{"\uD835\uDD4F"}</span> SHARE</button>
-            <button onClick={function(){ if(cardRef.current) downloadCardImage(cardRef.current); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{"\u2B07"} SAVE</button>
+          <div className="fu d2" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: mob ? 6 : 10, marginTop: mob ? 14 : 22, marginBottom: mob ? 14 : 20, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "'JetBrains Mono'", fontSize: mob ? 9 : 10, color: G.faint, letterSpacing: 2, width: mob ? "100%" : "auto", textAlign: "center" }}>SHARE_DNA</span>
+            <button onClick={function(){ if(cardRef.current) copyCardImage(cardRef.current, setCopyText); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: mob ? "6px 10px" : "8px 16px", background: G.card, border: "1px solid "+(copyText === "COPIED!" ? G.accent : G.border), borderRadius: 8, color: copyText === "COPIED!" ? G.accent : G.text, fontFamily: "'JetBrains Mono'", fontSize: mob ? 10 : 11, fontWeight: 600, cursor: "pointer", transition: "all 0.3s" }}>{copyText === "COPIED!" ? "\u2713" : "\u{1F4CB}"} {copyText}</button>
+            <button onClick={function(){ if(cardRef.current) shareToX(cardRef.current, result); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: mob ? "6px 10px" : "8px 16px", background: "#000", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, color: "#fff", fontFamily: "'JetBrains Mono'", fontSize: mob ? 10 : 11, fontWeight: 600, cursor: "pointer" }}><span style={{ fontSize: mob ? 12 : 14, fontWeight: 900 }}>{"\uD835\uDD4F"}</span> SHARE</button>
+            <button onClick={function(){ if(cardRef.current) downloadCardImage(cardRef.current); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: mob ? "6px 10px" : "8px 16px", background: G.card, border: "1px solid "+G.border, borderRadius: 8, color: G.text, fontFamily: "'JetBrains Mono'", fontSize: mob ? 10 : 11, fontWeight: 600, cursor: "pointer" }}>{"\u2B07"} SAVE</button>
           </div>
 
           {/* WHY IS MY WALLET SCORE — clickable popup */}
